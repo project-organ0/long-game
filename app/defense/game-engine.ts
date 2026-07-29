@@ -1,16 +1,22 @@
 import { ENEMIES, GAME_BALANCE, HABIT_CARDS, ORGANS, WAVES } from "./balance";
-import type { EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType } from "./types";
+import type { AbilityId, EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType, TargetMode } from "./types";
 
 type Point = { x: number; y: number };
-type Enemy = { id: number; type: EnemyType; hp: number; maxHp: number; speed: number; path: number; x: number; y: number; hit: number; dead: number };
+type Enemy = {
+  id: number; type: EnemyType; hp: number; maxHp: number; speed: number; path: number; x: number; y: number;
+  hit: number; dead: number; slow: number; poison: number; poisonDps: number; regenClock: number;
+};
 type Projectile = { x: number; y: number; tx: number; ty: number; target: number; organ: OrganType; damage: number; color: string; splash: number; life: number };
-type Floater = { x: number; y: number; text: string; color: string; life: number };
+type Floater = { x: number; y: number; text: string; color: string; life: number; size: number };
 type Particle = { x: number; y: number; vx: number; vy: number; color: string; life: number };
+type Tracer = { x: number; y: number; tx: number; ty: number; color: string; life: number };
+type Ring = { x: number; y: number; r: number; maxR: number; color: string; life: number; width: number };
 type Spawn = { type: EnemyType; at: number };
 
 const PATH: Point[] = [{ x: -35, y: 130 }, { x: 170, y: 130 }, { x: 250, y: 280 }, { x: 475, y: 280 }, { x: 585, y: 450 }, { x: 790, y: 450 }, { x: 930, y: 310 }, { x: 1035, y: 310 }];
 const ORGAN_POS: Record<OrganType, Point> = { lung: { x: 220, y: 185 }, liver: { x: 515, y: 385 }, heart: { x: 790, y: 300 } };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
+const CORE: Point = { x: 945, y: 310 };
 
 export class DefenseEngine {
   private ctx: CanvasRenderingContext2D;
@@ -18,22 +24,31 @@ export class DefenseEngine {
   private last = 0;
   private uiTick = 0;
   private phase: GamePhase = "prep";
-  private wave: number = 1;
+  private wave = 1;
   private life: number = GAME_BALANCE.initialLife;
   private nutrients: number = GAME_BALANCE.initialNutrients;
   private elapsed = 0;
   private countdown: number = GAME_BALANCE.prepSeconds;
   private kills = 0;
+  private combo = 0;
+  private bestCombo = 0;
+  private comboTimer = 0;
+  private speed = 1;
+  private targetMode: TargetMode = "first";
   private selected: OrganType = "heart";
   private paused = false;
   private permanentDamage = 1;
+  private adrenaline = 0; // 남은 초
   private next: NextWaveEffects = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
   private organCooldown: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
+  private abilityCd: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private organs: Record<OrganType, OrganState> = { lung: { id: "lung", level: 1 }, liver: { id: "liver", level: 1 }, heart: { id: "heart", level: 1 } };
   private enemies: Enemy[] = [];
   private projectiles: Projectile[] = [];
   private floaters: Floater[] = [];
   private particles: Particle[] = [];
+  private tracers: Tracer[] = [];
+  private rings: Ring[] = [];
   private queue: Spawn[] = [];
   private spawnClock = 0;
   private enemyId = 0;
@@ -59,17 +74,70 @@ export class DefenseEngine {
   togglePause() { this.paused = !this.paused; this.message = this.paused ? "잠시 숨 고르는 중" : "방어 재개"; this.emit(); }
   isPaused() { return this.paused; }
   selectOrgan(id: OrganType) { this.selected = id; this.emit(); }
+  setSpeed(mult: number) { this.speed = mult; this.emit(); }
+  cycleTargetMode() {
+    const order: TargetMode[] = ["first", "last", "strong"];
+    this.targetMode = order[(order.indexOf(this.targetMode) + 1) % order.length];
+    this.emit();
+  }
+
+  startWaveNow() {
+    if (this.phase !== "prep") return;
+    const bonus = Math.round(Math.max(0, this.countdown) * GAME_BALANCE.earlyStartInterest);
+    if (bonus > 0) {
+      this.nutrients += bonus;
+      this.floaters.push({ x: CORE.x - 40, y: CORE.y - 60, text: `조기 시작 +${bonus}`, color: "#f2c66d", life: 1.4, size: 15 });
+    }
+    this.countdown = 0;
+    this.startWave();
+    this.emit();
+  }
 
   upgrade(id: OrganType, free = false) {
     const organ = this.organs[id];
-    if (organ.level >= 3) return false;
+    if (organ.level >= GAME_BALANCE.maxOrganLevel) return false;
     const cost = GAME_BALANCE.organUpgradeCosts[organ.level - 1];
     if (!free && this.nutrients < cost) return false;
     if (!free) this.nutrients -= cost;
     organ.level += 1;
     const p = ORGAN_POS[id];
-    for (let i = 0; i < 18; i++) this.particles.push({ x: p.x, y: p.y, vx: Math.cos(i * .9) * 65, vy: Math.sin(i * .9) * 65, color: ORGANS[id].color, life: .8 });
+    for (let i = 0; i < 22; i++) this.particles.push({ x: p.x, y: p.y, vx: Math.cos(i * .8) * 72, vy: Math.sin(i * .8) * 72, color: ORGANS[id].color, life: .85 });
+    this.rings.push({ x: p.x, y: p.y, r: 10, maxR: 70, color: ORGANS[id].color, life: .6, width: 4 });
     this.message = `${ORGANS[id].name} Lv.${organ.level} 성장 완료`;
+    this.emit();
+    return true;
+  }
+
+  castAbility(id: OrganType) {
+    if (this.phase !== "wave") { this.message = "웨이브 중에만 사용할 수 있습니다"; this.emit(); return false; }
+    if (this.abilityCd[id] > 0) return false;
+    const config = ORGANS[id];
+    const p = ORGAN_POS[id];
+    const level = this.organs[id].level;
+    const range = config.range * GAME_BALANCE.levelRangeMultiplier[level - 1];
+    this.abilityCd[id] = config.ability.cooldown;
+
+    if (id === "lung") {
+      // 심호흡: 사거리 내 정화 폭발 + 슬로우
+      const burst = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[level - 1] * this.permanentDamage * 2.4;
+      for (const e of this.enemies) {
+        if (Math.hypot(e.x - p.x, e.y - p.y) <= range) { this.damageEnemy(e, burst, config.color); e.slow = Math.max(e.slow, config.ability.duration); }
+      }
+      this.rings.push({ x: p.x, y: p.y, r: 12, maxR: range, color: config.color, life: .7, width: 6 });
+    } else if (id === "liver") {
+      // 해독: 사거리 내 독 도트
+      const dps = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[level - 1] * this.permanentDamage * 0.9;
+      for (const e of this.enemies) {
+        if (Math.hypot(e.x - p.x, e.y - p.y) <= range) { e.poison = config.ability.duration; e.poisonDps = dps; }
+      }
+      this.rings.push({ x: p.x, y: p.y, r: 12, maxR: range, color: "#c8ff43", life: .7, width: 6 });
+    } else if (id === "heart") {
+      // 아드레날린: 전 장기 공속 2배
+      this.adrenaline = config.ability.duration;
+      for (const t of TYPES) this.rings.push({ x: ORGAN_POS[t].x, y: ORGAN_POS[t].y, r: 8, maxR: 46, color: config.color, life: .5, width: 4 });
+    }
+    this.enemies = this.enemies.filter((e) => !e.dead);
+    this.message = `${config.name} · ${config.ability.name}!`;
     this.emit();
     return true;
   }
@@ -77,22 +145,25 @@ export class DefenseEngine {
   chooseCard(id: string) {
     if (this.phase !== "cards") return;
     if (id === "exercise") this.permanentDamage += GAME_BALANCE.damagePermanentStep;
-    if (id === "sleep") this.life = Math.min(GAME_BALANCE.maxLife, this.life + 2);
+    if (id === "sleep") this.life = Math.min(GAME_BALANCE.maxLife, this.life + 3);
     if (id === "checkup") {
       const min = Math.min(...TYPES.map((type) => this.organs[type].level));
-      const target = TYPES.find((type) => this.organs[type].level === min && min < 3);
-      target ? this.upgrade(target, true) : this.nutrients += 80;
+      const target = TYPES.find((type) => this.organs[type].level === min && min < GAME_BALANCE.maxOrganLevel);
+      if (target) this.upgrade(target, true); else this.nutrients += 120;
     }
-    if (id === "energy") this.next.attackSpeed = 1.3;
-    if (id === "snack") { this.nutrients += 100; this.next.extraEnemies.push("stress", "dust", "stress"); }
+    if (id === "vitamin") this.abilityCd = { lung: 0, liver: 0, heart: 0 };
+    if (id === "energy") this.next.attackSpeed = 1.35;
+    if (id === "snack") { this.nutrients += 130; this.next.extraEnemies.push("sugar", "sugar", "sugar"); }
     if (id === "allnight") { this.upgrade(this.selected, true); this.life = Math.max(0, this.life - 2); }
-    if (id === "drinks") { this.nutrients += 150; this.next.extraEnemies.push("alcohol", "alcohol"); }
-    if (id === "meditation") this.next.enemySpeed = .85;
+    if (id === "drinks") { this.nutrients += 180; this.next.extraEnemies.push("alcohol", "alcohol"); }
+    if (id === "meditation") this.next.enemySpeed = .82;
+    if (id === "walk") { this.life = Math.min(GAME_BALANCE.maxLife, this.life + 1); this.nutrients += 60; }
     if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; this.emit(); return; }
     this.wave += 1;
     this.phase = "prep";
     this.countdown = GAME_BALANCE.prepSeconds;
-    this.message = `${WAVES[this.wave - 1].label} 대비`;
+    const w = WAVES[this.wave - 1];
+    this.message = `${w.clock} ${w.label} 대비`;
     this.cards = [];
     this.emit();
   }
@@ -108,12 +179,18 @@ export class DefenseEngine {
   };
 
   private loop = (now: number) => {
-    const dt = Math.min(.04, (now - this.last) / 1000 || 0);
+    const raw = (now - this.last) / 1000 || 0;
     this.last = now;
-    if (!this.paused && this.phase !== "cards" && this.phase !== "victory" && this.phase !== "defeat") this.update(dt);
+    const active = !this.paused && this.phase !== "cards" && this.phase !== "victory" && this.phase !== "defeat";
+    if (active) {
+      // 배속: 큰 프레임을 잘게 나눠 시뮬레이션 안정성 유지
+      const total = Math.min(.05, raw) * this.speed;
+      let remaining = total;
+      while (remaining > 0) { const step = Math.min(.02, remaining); this.update(step); remaining -= step; }
+    }
     this.draw();
-    this.uiTick += dt;
-    if (this.uiTick > .2) { this.uiTick = 0; this.emit(); }
+    this.uiTick += raw;
+    if (this.uiTick > .12) { this.uiTick = 0; this.emit(); }
     this.raf = requestAnimationFrame(this.loop);
   };
 
@@ -121,6 +198,10 @@ export class DefenseEngine {
     this.elapsed += dt;
     this.flash = Math.max(0, this.flash - dt);
     this.shake = Math.max(0, this.shake - dt);
+    this.adrenaline = Math.max(0, this.adrenaline - dt);
+    for (const t of TYPES) this.abilityCd[t] = Math.max(0, this.abilityCd[t] - dt);
+    if (this.combo > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
+
     if (this.phase === "prep") {
       this.countdown -= dt;
       if (this.countdown <= 0) this.startWave();
@@ -128,51 +209,95 @@ export class DefenseEngine {
       this.spawnClock += dt;
       while (this.queue.length && this.spawnClock >= this.queue[0].at) this.spawn(this.queue.shift()!.type);
       this.moveEnemies(dt);
+      this.applyStatuses(dt);
       this.attack(dt);
       this.moveProjectiles(dt);
       if (!this.queue.length && !this.enemies.length) this.finishWave();
     }
     for (const f of this.floaters) { f.y -= 28 * dt; f.life -= dt; }
     for (const p of this.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
+    for (const t of this.tracers) t.life -= dt;
+    for (const r of this.rings) { r.r += (r.maxR - r.r) * Math.min(1, dt * 7); r.life -= dt; }
     this.floaters = this.floaters.filter((f) => f.life > 0);
     this.particles = this.particles.filter((p) => p.life > 0);
+    this.tracers = this.tracers.filter((t) => t.life > 0);
+    this.rings = this.rings.filter((r) => r.life > 0);
   }
 
   private startWave() {
     const config = WAVES[this.wave - 1];
     this.queue = [];
-    let at = .2;
-    for (const group of config.groups) for (let i = 0; i < group.count; i++) { this.queue.push({ type: group.type, at }); at += group.spawnInterval; }
-    for (const type of this.next.extraEnemies) { at += .35; this.queue.push({ type, at }); }
+    for (const group of config.groups) {
+      let at = group.delay ?? .2;
+      for (let i = 0; i < group.count; i++) { this.queue.push({ type: group.type, at }); at += group.spawnInterval; }
+    }
+    let extraAt = (this.queue.at(-1)?.at ?? 0) + .5;
+    for (const type of this.next.extraEnemies) { this.queue.push({ type, at: extraAt }); extraAt += .4; }
     this.queue.sort((a, b) => a.at - b.at);
     this.spawnClock = 0;
     this.phase = "wave";
-    this.message = this.wave === 5 ? "⚠ 과로 보스 접근 중" : `WAVE ${this.wave} · ${config.label}`;
+    this.message = config.groups.some((g) => ENEMIES[g.type].boss) ? `⚠ ${config.label}` : `${config.clock} · ${config.label}`;
   }
 
   private spawn(type: EnemyType) {
     const base = ENEMIES[type];
-    const scale = 1 + (this.wave - 1) * .14;
-    this.enemies.push({ id: ++this.enemyId, type, hp: base.maxHp * scale, maxHp: base.maxHp * scale, speed: base.speed * (1 + (this.wave - 1) * .025) * this.next.enemySpeed, path: 0, x: PATH[0].x, y: PATH[0].y, hit: 0, dead: 0 });
+    const scale = base.boss ? 1 + (this.wave - 1) * .05 : 1 + (this.wave - 1) * .12;
+    const hp = base.maxHp * scale;
+    this.enemies.push({
+      id: ++this.enemyId, type, hp, maxHp: hp,
+      speed: base.speed * (1 + (this.wave - 1) * .02) * this.next.enemySpeed,
+      path: 0, x: PATH[0].x, y: PATH[0].y, hit: 0, dead: 0, slow: 0, poison: 0, poisonDps: 0, regenClock: 0,
+    });
   }
 
   private moveEnemies(dt: number) {
     for (const enemy of this.enemies) {
       enemy.hit = Math.max(0, enemy.hit - dt);
-      let move = enemy.speed * dt * (enemy.type === "overwork" && Math.sin(this.elapsed * 1.7) > .72 ? 1.7 : 1);
+      enemy.slow = Math.max(0, enemy.slow - dt);
+      const base = ENEMIES[enemy.type];
+      const slowFactor = enemy.slow > 0 ? .45 : 1;
+      const sprintFactor = base.sprint && Math.sin(this.elapsed * 1.7) > .72 ? 1.7 : 1;
+      let move = enemy.speed * dt * slowFactor * sprintFactor;
       while (move > 0 && enemy.path < PATH.length - 1) {
         const target = PATH[enemy.path + 1], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
         if (move >= dist) { enemy.x = target.x; enemy.y = target.y; enemy.path++; move -= dist; }
         else { enemy.x += dx / dist * move; enemy.y += dy / dist * move; move = 0; }
       }
       if (enemy.path >= PATH.length - 1) {
-        this.life = Math.max(0, this.life - ENEMIES[enemy.type].lifeDamage);
-        enemy.dead = 1; this.flash = .35; this.shake = .3;
-        this.floaters.push({ x: 910, y: 270, text: `-${ENEMIES[enemy.type].lifeDamage} 생명`, color: "#ff4364", life: 1 });
+        this.life = Math.max(0, this.life - base.lifeDamage);
+        enemy.dead = 1; this.flash = .35; this.shake = .3; this.combo = 0;
+        this.floaters.push({ x: CORE.x - 30, y: CORE.y - 40, text: `-${base.lifeDamage} 생명`, color: "#ff4364", life: 1, size: 16 });
       }
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
     if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; }
+  }
+
+  private applyStatuses(dt: number) {
+    for (const enemy of this.enemies) {
+      // 독 도트
+      if (enemy.poison > 0) {
+        enemy.poison -= dt;
+        this.damageEnemy(enemy, enemy.poisonDps * dt, "#c8ff43", true);
+      }
+      // 자가 회복 (만성피로)
+      const base = ENEMIES[enemy.type];
+      if (base.regen && enemy.hp > 0 && enemy.poison <= 0) {
+        enemy.hp = Math.min(enemy.maxHp, enemy.hp + base.regen * dt);
+      }
+    }
+    this.enemies = this.enemies.filter((e) => !e.dead);
+  }
+
+  private progress(e: Enemy): number {
+    const next = PATH[Math.min(e.path + 1, PATH.length - 1)];
+    return e.path * 10000 - Math.hypot(next.x - e.x, next.y - e.y);
+  }
+
+  private pickTarget(list: Enemy[]): Enemy {
+    if (this.targetMode === "strong") return list.reduce((a, b) => (b.hp > a.hp ? b : a));
+    if (this.targetMode === "last") return list.reduce((a, b) => (this.progress(b) < this.progress(a) ? b : a));
+    return list.reduce((a, b) => (this.progress(b) > this.progress(a) ? b : a));
   }
 
   private attack(dt: number) {
@@ -181,12 +306,14 @@ export class DefenseEngine {
       this.organCooldown[id] -= dt;
       if (this.organCooldown[id] > 0) continue;
       const range = config.range * GAME_BALANCE.levelRangeMultiplier[state.level - 1];
-      const targets = this.enemies.filter((e) => Math.hypot(e.x - p.x, e.y - p.y) <= range).sort((a, b) => b.path - a.path);
-      if (!targets.length) continue;
-      const target = targets[0];
+      const inRange = this.enemies.filter((e) => Math.hypot(e.x - p.x, e.y - p.y) <= range);
+      if (!inRange.length) continue;
+      const target = this.pickTarget(inRange);
       const damage = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[state.level - 1] * this.permanentDamage * (config.bonusAgainst === target.type ? config.bonusMultiplier! : 1);
-      this.projectiles.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, target: target.id, organ: id, damage, color: config.color, splash: config.splash || 0, life: .45 });
-      this.organCooldown[id] = 1 / (config.baseAttackSpeed * GAME_BALANCE.levelSpeedMultiplier[state.level - 1] * this.next.attackSpeed);
+      this.projectiles.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, target: target.id, organ: id, damage, color: config.color, splash: config.splash || 0, life: .5 });
+      this.tracers.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, color: config.color, life: .12 });
+      const adrenalineMult = this.adrenaline > 0 ? 2 : 1;
+      this.organCooldown[id] = 1 / (config.baseAttackSpeed * GAME_BALANCE.levelSpeedMultiplier[state.level - 1] * this.next.attackSpeed * adrenalineMult);
     }
   }
 
@@ -195,29 +322,43 @@ export class DefenseEngine {
       const enemy = this.enemies.find((e) => e.id === shot.target);
       if (enemy) { shot.tx = enemy.x; shot.ty = enemy.y; }
       const dx = shot.tx - shot.x, dy = shot.ty - shot.y, dist = Math.hypot(dx, dy);
-      const move = 580 * dt;
-      if (dist < move || shot.life <= 0) { if (enemy) this.hit(enemy, shot.damage, shot); shot.life = -1; }
+      const move = 620 * dt;
+      if (dist < move || shot.life <= 0) { if (enemy) this.impact(enemy, shot.damage, shot); shot.life = -1; }
       else { shot.x += dx / dist * move; shot.y += dy / dist * move; shot.life -= dt; }
     }
     this.projectiles = this.projectiles.filter((p) => p.life > 0);
   }
 
-  private hit(enemy: Enemy, damage: number, shot: Projectile) {
+  private impact(enemy: Enemy, damage: number, shot: Projectile) {
     const victims = shot.splash ? this.enemies.filter((e) => Math.hypot(e.x - enemy.x, e.y - enemy.y) <= shot.splash) : [enemy];
+    if (shot.splash) this.rings.push({ x: enemy.x, y: enemy.y, r: 6, maxR: shot.splash, color: shot.color, life: .32, width: 3 });
     for (const victim of victims) {
-      const dealt = victim === enemy ? damage : damage * .65;
-      victim.hp -= dealt; victim.hit = .12;
-      this.floaters.push({ x: victim.x, y: victim.y - 20, text: `${Math.round(dealt)}`, color: shot.color, life: .65 });
-      if (victim.hp <= 0 && !victim.dead) {
-        victim.dead = 1; this.kills++; this.nutrients += ENEMIES[victim.type].reward;
-        for (let i = 0; i < 9; i++) this.particles.push({ x: victim.x, y: victim.y, vx: (Math.random() - .5) * 130, vy: (Math.random() - .5) * 130, color: ENEMIES[victim.type].color, life: .6 });
-      }
+      const dealt = victim === enemy ? damage : damage * .6;
+      this.damageEnemy(victim, dealt, shot.color);
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
   }
 
+  private damageEnemy(enemy: Enemy, dealt: number, color: string, silent = false) {
+    if (enemy.dead) return;
+    enemy.hp -= dealt; enemy.hit = .12;
+    if (!silent) this.floaters.push({ x: enemy.x, y: enemy.y - 20, text: `${Math.round(dealt)}`, color, life: .6, size: 15 });
+    if (enemy.hp <= 0) {
+      enemy.dead = 1; this.kills++;
+      this.combo++; this.comboTimer = 3.2; this.bestCombo = Math.max(this.bestCombo, this.combo);
+      const mult = Math.min(GAME_BALANCE.comboMax, 1 + Math.floor(this.combo / GAME_BALANCE.comboStep));
+      const reward = Math.round(ENEMIES[enemy.type].reward * mult);
+      this.nutrients += reward;
+      this.floaters.push({ x: enemy.x, y: enemy.y - 34, text: mult > 1 ? `+${reward} ×${mult}` : `+${reward}`, color: mult > 1 ? "#f2c66d" : "#80e0a7", life: .8, size: mult > 1 ? 17 : 13 });
+      const n = ENEMIES[enemy.type].boss ? 22 : 10;
+      for (let i = 0; i < n; i++) this.particles.push({ x: enemy.x, y: enemy.y, vx: (Math.random() - .5) * 150, vy: (Math.random() - .5) * 150, color: ENEMIES[enemy.type].color, life: .65 });
+      if (ENEMIES[enemy.type].boss) { this.shake = .35; this.rings.push({ x: enemy.x, y: enemy.y, r: 10, maxR: 120, color: ENEMIES[enemy.type].color, life: .8, width: 5 }); }
+    }
+  }
+
   private finishWave() {
     this.next = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
+    this.adrenaline = 0;
     if (this.wave === WAVES.length) { this.phase = "victory"; this.message = "오늘도 살아남았습니다."; }
     else {
       this.phase = "cards";
@@ -229,9 +370,22 @@ export class DefenseEngine {
   }
 
   private emit() {
-    this.onHud({ phase: this.phase, wave: this.wave, life: this.life, nutrients: this.nutrients, elapsed: this.elapsed, remaining: this.enemies.length + this.queue.length, countdown: Math.max(0, this.countdown), kills: this.kills, selected: this.selected, organs: structuredClone(this.organs), cards: this.cards, message: this.message });
+    const w = WAVES[Math.min(this.wave - 1, WAVES.length - 1)];
+    const abilities = {} as HudState["abilities"];
+    for (const id of TYPES) {
+      const cd = this.abilityCd[id], total = ORGANS[id].ability.cooldown;
+      abilities[id] = { id: ORGANS[id].ability.id, cooldown: cd, ready: cd <= 0, active: id === "heart" ? this.adrenaline : 0 };
+    }
+    this.onHud({
+      phase: this.phase, wave: this.wave, totalWaves: WAVES.length, life: this.life, maxLife: GAME_BALANCE.maxLife,
+      nutrients: Math.floor(this.nutrients), elapsed: this.elapsed, remaining: this.enemies.length + this.queue.length,
+      countdown: Math.max(0, this.countdown), kills: this.kills, combo: this.combo, bestCombo: this.bestCombo,
+      speed: this.speed, targetMode: this.targetMode, selected: this.selected, organs: structuredClone(this.organs),
+      abilities, cards: this.cards, message: this.message, clock: w.clock, flavor: w.flavor,
+    });
   }
 
+  // ── 렌더링 ─────────────────────────────────────────
   private draw() {
     const c = this.ctx;
     c.save();
@@ -241,11 +395,15 @@ export class DefenseEngine {
     this.drawVessels(c);
     this.drawCore(c);
     this.drawOrgans(c);
+    for (const t of this.tracers) { c.globalAlpha = Math.max(0, t.life / .12) * .8; c.strokeStyle = t.color; c.lineWidth = 2.5; c.beginPath(); c.moveTo(t.x, t.y); c.lineTo(t.tx, t.ty); c.stroke(); } c.globalAlpha = 1;
+    for (const r of this.rings) { c.globalAlpha = Math.max(0, r.life); c.strokeStyle = r.color; c.lineWidth = r.width; c.beginPath(); c.arc(r.x, r.y, r.r, 0, Math.PI * 2); c.stroke(); } c.globalAlpha = 1;
     for (const enemy of this.enemies) this.drawEnemy(c, enemy);
-    for (const shot of this.projectiles) { c.beginPath(); c.arc(shot.x, shot.y, shot.organ === "lung" ? 9 : 5, 0, Math.PI * 2); c.fillStyle = shot.color; c.shadowColor = shot.color; c.shadowBlur = 12; c.fill(); c.shadowBlur = 0; }
+    for (const shot of this.projectiles) { c.beginPath(); c.arc(shot.x, shot.y, shot.organ === "lung" ? 9 : shot.organ === "liver" ? 7 : 5, 0, Math.PI * 2); c.fillStyle = shot.color; c.shadowColor = shot.color; c.shadowBlur = 12; c.fill(); c.shadowBlur = 0; }
     for (const p of this.particles) { c.globalAlpha = Math.max(0, p.life); c.fillStyle = p.color; c.fillRect(p.x, p.y, 4, 4); } c.globalAlpha = 1;
-    for (const f of this.floaters) { c.globalAlpha = Math.min(1, f.life * 2); c.fillStyle = f.color; c.font = "800 16px sans-serif"; c.textAlign = "center"; c.fillText(f.text, f.x, f.y); } c.globalAlpha = 1; c.textAlign = "start";
+    for (const f of this.floaters) { c.globalAlpha = Math.min(1, f.life * 2.4); c.fillStyle = f.color; c.font = `800 ${f.size}px sans-serif`; c.textAlign = "center"; c.fillText(f.text, f.x, f.y); } c.globalAlpha = 1; c.textAlign = "start";
+    if (this.adrenaline > 0) { c.strokeStyle = `rgba(255,100,124,${.25 + Math.sin(this.elapsed * 12) * .15})`; c.lineWidth = 6; c.strokeRect(3, 3, 994, 594); }
     if (this.flash > 0) { c.fillStyle = `rgba(255,35,68,${this.flash * .45})`; c.fillRect(0, 0, 1000, 600); }
+    if (this.combo >= GAME_BALANCE.comboStep) { c.fillStyle = "#f2c66d"; c.font = "900 22px sans-serif"; c.textAlign = "right"; c.fillText(`${this.combo} COMBO`, 980, 40); c.textAlign = "start"; }
     if (this.paused) { c.fillStyle = "rgba(8,9,16,.62)"; c.fillRect(0, 0, 1000, 600); c.fillStyle = "#fff"; c.textAlign = "center"; c.font = "800 34px sans-serif"; c.fillText("일시 정지", 500, 292); c.font = "15px sans-serif"; c.fillStyle = "#aeb4c2"; c.fillText("몸도 가끔은 쉬어야 합니다", 500, 325); c.textAlign = "start"; }
     c.restore();
   }
@@ -268,6 +426,7 @@ export class DefenseEngine {
     c.fillStyle = vignette; c.fillRect(0, 0, 1000, 600);
     c.fillStyle = "rgba(255,214,217,.6)"; c.font = "800 10px sans-serif"; c.letterSpacing = "2px";
     c.fillText("BODY INTERIOR · CIRCULATORY DEFENSE", 24, 28);
+    c.letterSpacing = "0px";
   }
   private drawVessels(c: CanvasRenderingContext2D) {
     c.lineCap = "round"; c.lineJoin = "round";
@@ -299,22 +458,30 @@ export class DefenseEngine {
   }
   private drawCore(c: CanvasRenderingContext2D) {
     const beat = 1 + Math.sin(this.elapsed * 4) * .08;
-    c.save(); c.translate(945, 310); c.scale(beat, beat);
+    const frac = Math.max(0, this.life / GAME_BALANCE.maxLife);
+    c.save(); c.translate(CORE.x, CORE.y); c.scale(beat, beat);
     c.beginPath(); c.arc(0, 0, 38, 0, Math.PI * 2); c.fillStyle = "rgba(255,70,96,.18)"; c.fill();
-    c.beginPath(); c.arc(0, 0, 26, 0, Math.PI * 2); c.fillStyle = "#ff4967"; c.shadowColor = "#ff4967"; c.shadowBlur = 28; c.fill();
+    c.beginPath(); c.arc(0, 0, 26, 0, Math.PI * 2); c.fillStyle = frac > .34 ? "#ff4967" : "#c62b45"; c.shadowColor = "#ff4967"; c.shadowBlur = 28; c.fill();
     c.shadowBlur = 0; c.strokeStyle = "#ffc0c8"; c.lineWidth = 2; c.stroke();
     c.fillStyle = "#fff"; c.font = "18px serif"; c.textAlign = "center"; c.fillText("✦", 0, 6); c.restore(); c.textAlign = "start";
-    c.fillStyle = "#ffc0c8"; c.font = "800 10px sans-serif"; c.fillText("생명 코어", 912, 262);
+    // 코어 생명 게이지
+    c.fillStyle = "rgba(0,0,0,.45)"; c.fillRect(CORE.x - 30, CORE.y + 42, 60, 6);
+    c.fillStyle = frac > .34 ? "#80e0a7" : "#ff4364"; c.fillRect(CORE.x - 30, CORE.y + 42, 60 * frac, 6);
+    c.fillStyle = "#ffc0c8"; c.font = "800 10px sans-serif"; c.textAlign = "center"; c.fillText("생명 코어", CORE.x, CORE.y - 48); c.textAlign = "start";
   }
   private drawOrgans(c: CanvasRenderingContext2D) {
     for (const id of TYPES) {
       const config = ORGANS[id], p = ORGAN_POS[id], level = this.organs[id].level, selected = this.selected === id;
       const range = config.range * GAME_BALANCE.levelRangeMultiplier[level - 1];
       if (selected) { c.beginPath(); c.arc(p.x, p.y, range, 0, Math.PI * 2); c.fillStyle = `${config.color}12`; c.fill(); c.setLineDash([7, 8]); c.strokeStyle = `${config.color}70`; c.lineWidth = 2; c.stroke(); c.setLineDash([]); }
+      // 스킬 준비 완료 표시 링
+      if (this.phase === "wave" && this.abilityCd[id] <= 0) {
+        c.beginPath(); c.arc(p.x, p.y, 54, 0, Math.PI * 2); c.strokeStyle = `${config.color}${Math.sin(this.elapsed * 4) > 0 ? "cc" : "55"}`; c.lineWidth = 2; c.stroke();
+      }
       c.save();
       c.translate(p.x, p.y);
       const pulse = 1 + Math.sin(this.elapsed * (id === "heart" ? 6 : 2.4)) * .035;
-      c.scale(pulse * (1 + (level - 1) * .08), pulse * (1 + (level - 1) * .08));
+      c.scale(pulse * (1 + (level - 1) * .05), pulse * (1 + (level - 1) * .05));
       c.shadowColor = config.color; c.shadowBlur = selected ? 28 : 11;
       if (id === "lung") this.drawLung(c);
       if (id === "liver") this.drawLiver(c);
@@ -347,15 +514,22 @@ export class DefenseEngine {
     c.strokeStyle="rgba(255,225,228,.65)";c.lineWidth=2;c.beginPath();c.moveTo(-18,-12);c.bezierCurveTo(-6,-3,-10,10,6,20);c.stroke();
   }
   private drawEnemy(c: CanvasRenderingContext2D, e: Enemy) {
-    const config = ENEMIES[e.type], boss = e.type === "overwork", size = boss ? 31 : 20;
-    c.save(); c.translate(e.x, e.y); c.rotate(Math.sin(this.elapsed * 2 + e.id) * .15); c.scale(e.hit ? 1.25 : 1, e.hit ? .8 : 1);
+    const config = ENEMIES[e.type], boss = !!config.boss, size = boss ? 31 : 20;
+    c.save(); c.translate(e.x, e.y);
+    // 상태이상 링
+    if (e.slow > 0) { c.strokeStyle = "rgba(120,235,255,.85)"; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, size + 8, 0, Math.PI * 2); c.stroke(); }
+    if (e.poison > 0) { c.strokeStyle = `rgba(200,255,67,${.5 + Math.sin(this.elapsed * 10) * .3})`; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, size + 4, 0, Math.PI * 2); c.stroke(); }
+    c.rotate(Math.sin(this.elapsed * 2 + e.id) * .15); c.scale(e.hit ? 1.25 : 1, e.hit ? .8 : 1);
     c.strokeStyle=e.hit?"#fff":config.color;c.lineWidth=boss?6:3;
-    const spikes=boss?14:e.type==="dust"?10:8;
+    const spikes=boss?14:e.type==="dust"?10:e.type==="caffeine"?6:8;
     c.beginPath();for(let i=0;i<spikes*2;i++){const a=i/(spikes*2)*Math.PI*2,r=i%2?size:size*1.38;const x=Math.cos(a)*r,y=Math.sin(a)*r;i?c.lineTo(x,y):c.moveTo(x,y)}c.closePath();
     c.fillStyle=e.hit?"#fff":config.color;c.shadowColor=config.color;c.shadowBlur=boss?22:8;c.fill();c.stroke();c.shadowBlur=0;
     c.fillStyle="#251424";c.beginPath();c.arc(-6,-2,boss?5:3,0,Math.PI*2);c.arc(6,-2,boss?5:3,0,Math.PI*2);c.fill();
     if(e.type==="alcohol"){c.strokeStyle="#fff1ba";c.lineWidth=3;c.beginPath();c.moveTo(-8,9);c.lineTo(8,9);c.stroke()}
     else {c.strokeStyle="#251424";c.lineWidth=2;c.beginPath();c.arc(0,7,7,0,Math.PI);c.stroke()}
-    c.fillStyle = "#161823"; c.fillRect(-size, -size - 12, size * 2, 5); c.fillStyle = boss ? "#ff4364" : "#80e0a7"; c.fillRect(-size, -size - 12, size * 2 * Math.max(0, e.hp / e.maxHp), 5); c.restore(); c.textAlign = "start";
+    c.fillStyle = "#161823"; c.fillRect(-size, -size - 12, size * 2, 5);
+    const hpFrac = Math.max(0, e.hp / e.maxHp);
+    c.fillStyle = boss ? "#ff4364" : hpFrac > .4 ? "#80e0a7" : "#f2c66d"; c.fillRect(-size, -size - 12, size * 2 * hpFrac, 5);
+    c.restore(); c.textAlign = "start";
   }
 }

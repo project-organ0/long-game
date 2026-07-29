@@ -120,3 +120,44 @@ button { color:inherit }
 .card-exercise{background-position:0 50%}.card-sleep{background-position:100% 100%}.card-checkup{background-position:66.667% 50%}.card-energy{background-position:33.333% 50%}
 .card-snack{background-position:0 100%}.card-allnight{background-position:33.333% 0}.card-drinks{background-position:33.333% 100%}.card-meditation{background-position:100% 100%}
 .result{border:2px solid var(--acid);border-radius:20px;background:#17201f}.result-icon{background:var(--acid)}.result button{background:var(--acid);color:var(--ink);border:2px solid var(--ink);border-radius:999px}
+
+/* ── 배속 · HUD 확장 ── */
+.hud{grid-template-columns:repeat(6,1fr)}
+.hud .clock{font-size:19px}.hud .combo{color:var(--coral)}
+.speed-control{display:flex;gap:4px;margin-left:auto}
+.speed-control button{width:34px;height:30px;border:1.5px solid var(--ink);background:white;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:2px 2px 0 var(--ink)}
+.speed-control button.active{background:var(--ink);color:var(--paper)}
+
+/* ── 웨이브 즉시 시작 ── */
+.start-now{position:absolute;z-index:3;bottom:150px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:11px 20px;border:2px solid var(--ink);border-radius:999px;background:var(--acid);color:var(--ink);font-weight:900;cursor:pointer;box-shadow:3px 3px 0 var(--ink);animation:bob 1.4s ease-in-out infinite}
+.start-now em{font-style:normal;font-size:11px;background:var(--ink);color:var(--acid);padding:3px 8px;border-radius:999px}
+@keyframes bob{50%{transform:translate(-50%,-4px)}}
+
+/* ── 액티브 스킬 바 ── */
+.control-bar{display:flex;gap:10px;align-items:stretch;padding:10px;border-top:2px solid var(--ink);background:rgba(23,32,31,.94)}
+.ability-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;flex:1}
+.ability{position:relative;display:flex;align-items:center;gap:9px;overflow:hidden;padding:9px 12px;border:2px solid var(--organ);border-radius:12px;background:#10201f;color:white;cursor:pointer;text-align:left;transition:transform .1s}
+.ability.ready{box-shadow:0 0 0 2px var(--organ),0 0 16px color-mix(in srgb,var(--organ) 45%,transparent)}
+.ability.ready:hover{transform:translateY(-2px)}
+.ability.cooling{border-color:#39423f;box-shadow:none;opacity:.9;cursor:not-allowed}
+.ability:disabled{cursor:not-allowed}
+.ability.on{box-shadow:0 0 0 2px var(--coral),0 0 22px var(--coral)}
+.ab-icon{font-size:22px;z-index:2}
+.ab-meta{z-index:2;line-height:1.15}.ab-meta b{font-size:13px}.ab-meta small{display:block;color:#9fb0ad;font-size:9px}
+.ab-cool{position:absolute;left:0;bottom:0;width:100%;background:rgba(255,255,255,.1);transition:height .1s linear}
+.ab-num{position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:3;font-weight:900;font-size:15px;color:#cfd8d5}
+.ab-num.on{color:var(--coral)}
+.target-toggle{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:96px;padding:7px 13px;border:2px solid var(--acid);border-radius:12px;background:#10201f;color:white;cursor:pointer}
+.target-toggle small{color:var(--acid);font-size:9px;letter-spacing:.1em}.target-toggle b{font-size:13px}
+.ability-info{margin:12px 0 0;padding:11px;background:#101919;border-left:4px solid var(--coral);border-radius:0 10px 10px 0}
+.ability-info small{color:var(--coral)}.ability-info p{font-size:11px;line-height:1.5;margin:5px 0 0;color:#d3d7d1}
+.upgrade span i{font-style:normal;font-size:10px;opacity:.7;margin-left:3px}
+
+@media(max-width:900px){
+  .hud{grid-template-columns:repeat(3,1fr)}.hud>div:nth-child(4),.hud>div:nth-child(5),.hud>div:nth-child(6){display:none}
+  .ability .ab-meta small{display:none}.start-now{bottom:210px}
+}
+@media(max-width:520px){
+  .control-bar{flex-direction:column}.ab-meta b{font-size:11px}.ab-icon{font-size:18px}
+  .target-toggle{min-width:0;flex-direction:row;justify-content:space-between}
+}
