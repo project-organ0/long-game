@@ -76,3 +76,47 @@ button { color:inherit }
   .wave-banner{top:5px;padding:5px;font-size:9px}.wave-banner span{display:none}.organ-panel{padding:14px}.result{padding:26px 18px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+/* Original Organ Game visual language */
+.game-shell {
+  --ink:#101515; --paper:#e9eadf; --acid:#d8ff3e; --coral:#ff715b; --cyan:#4ee5e1;
+  background:
+    radial-gradient(circle at 12% 12%,rgba(216,255,62,.45),transparent 27%),
+    radial-gradient(circle at 88% 88%,rgba(78,229,225,.26),transparent 31%),
+    linear-gradient(rgba(16,21,21,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(16,21,21,.045) 1px,transparent 1px),
+    var(--paper);
+  background-size:auto,auto,26px 26px,26px 26px,auto;
+  color:var(--ink);
+}
+.game-header { border-bottom:2px solid var(--ink) }
+.game-header h1 { font-weight:950 }.game-header h1 span{color:var(--coral)}
+.back-link,.game-header p { color:#54605d }
+.pause-button { color:var(--ink);border:1.5px solid var(--ink);border-radius:999px;background:white;box-shadow:2px 2px 0 var(--ink);font-weight:900 }
+.hud { background:rgba(255,255,255,.72);border:2px solid var(--ink);border-radius:14px;overflow:hidden;box-shadow:4px 4px 0 var(--ink) }
+.hud>div { border-right:1px solid rgba(16,21,21,.18) }.hud small{color:#5f6966}.hud strong i{color:#6c7773}
+.hud .life{color:var(--coral)}.hud .nutrient{color:#758f00}
+.arena-wrap { border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink) }
+.arena-wrap canvas { background:#151d1d }
+.wave-banner { background:rgba(8,13,13,.88);border:1px solid rgba(216,255,62,.55);border-radius:999px;box-shadow:0 0 24px rgba(216,255,62,.08) }
+.wave-banner span{color:var(--acid)}.wave-banner.prep span{color:#ffd66b}
+.organ-panel { background:rgba(255,255,255,.76);border:2px solid var(--ink);border-radius:18px;box-shadow:5px 5px 0 var(--ink) }
+.panel-heading { border-color:rgba(16,21,21,.18) }
+.panel-heading>span { width:64px;height:68px;border:1.5px solid var(--ink);border-radius:14px }
+.panel-heading h2 i { color:#326c68;border-color:#326c68 }
+.role{color:#586461}.stats{border-color:rgba(16,21,21,.2);background:white}.stats div{border-color:rgba(16,21,21,.16)}.stats span{color:#69746f}
+.special{background:#17201f;color:white;border-left:4px solid var(--acid);border-radius:0 10px 10px 0}.special small{color:var(--acid)}
+.upgrade{background:var(--acid);color:var(--ink);border:2px solid var(--ink);border-radius:999px;box-shadow:3px 3px 0 var(--ink)}
+.upgrade:disabled{background:#bec1b7;color:#6c716c}.tip{color:#68726f}
+.wave-list{border-color:rgba(16,21,21,.18)}.wave-list>div>span{border-color:rgba(16,21,21,.3)}.wave-list>div.current{background:rgba(216,255,62,.35)}.wave-list .current>span{background:var(--acid);color:var(--ink);border-color:var(--ink)}
+.organ-avatar { display:block;background-image:url("/art/player-forms.png");background-repeat:no-repeat;background-size:400% 200%;background-color:transparent!important }
+.avatar-lung { background-position:0 100% }.avatar-liver{background-position:33.333% 100%}.avatar-heart{background-position:100% 0}
+.organ-tabs button { color:white }.organ-tabs .organ-avatar{width:30px;height:38px}.organ-tabs button.active{background:#222b2a}
+.modal-backdrop{background:rgba(8,13,13,.91)}
+.card-modal .eyebrow{color:var(--acid)}.card-modal h2{color:white}.card-modal>p{color:#aeb9b7}
+.habit-cards article{border:1px solid rgba(255,255,255,.24);border-radius:18px;border-top:1px solid rgba(255,255,255,.24);background:#1b2423;overflow:hidden}
+.habit-cards article:hover{border-color:var(--acid)}.habit-cards article>small{color:var(--acid)}.habit-cards button{border-radius:999px;border:1px solid var(--acid)}.habit-cards button:hover{background:var(--acid)}
+.card-art { display:block;width:96px;height:76px;margin:-4px 0 8px;background-image:url("/art/items.png");background-repeat:no-repeat;background-size:400% 300%;filter:drop-shadow(0 9px 8px rgba(0,0,0,.34)) }
+.card-exercise{background-position:0 50%}.card-sleep{background-position:100% 100%}.card-checkup{background-position:66.667% 50%}.card-energy{background-position:33.333% 50%}
+.card-snack{background-position:0 100%}.card-allnight{background-position:33.333% 0}.card-drinks{background-position:33.333% 100%}.card-meditation{background-position:100% 100%}
+.result{border:2px solid var(--acid);border-radius:20px;background:#17201f}.result-icon{background:var(--acid)}.result button{background:var(--acid);color:var(--ink);border:2px solid var(--ink);border-radius:999px}

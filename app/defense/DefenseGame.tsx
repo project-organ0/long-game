@@ -65,14 +65,14 @@ export default function DefenseGame() {
           <div className="organ-tabs">
             {(Object.keys(ORGANS) as OrganType[]).map((id) => (
               <button key={id} className={hud.selected === id ? "active" : ""} style={{ "--organ": ORGANS[id].color } as React.CSSProperties} onClick={() => select(id)}>
-                <span>{ORGANS[id].emoji}</span><b>{ORGANS[id].name}</b><small>LV {hud.organs[id].level}</small>
+                <span className={`organ-avatar avatar-${id}`} /><b>{ORGANS[id].name}</b><small>LV {hud.organs[id].level}</small>
               </button>
             ))}
           </div>
         </section>
 
         <aside className="organ-panel">
-          <div className="panel-heading"><span style={{ background: selected.color }}>{selected.emoji}</span><div><small>선택 장기</small><h2>{selected.name} <i>LV {selectedState.level}</i></h2></div></div>
+          <div className="panel-heading"><span className={`organ-avatar avatar-${hud.selected}`} style={{ backgroundColor: selected.color }} /><div><small>선택 장기 폼</small><h2>{selected.name} 전투원 <i>LV {selectedState.level}</i></h2></div></div>
           <p className="role">{selected.role}</p>
           <div className="stats">
             <div><span>공격력</span><b>{stats.damage}</b></div>
@@ -93,7 +93,7 @@ export default function DefenseGame() {
       {hud.phase === "cards" && <div className="modal-backdrop"><section className="card-modal" role="dialog" aria-modal="true" aria-label="생활 습관 카드 선택">
         <small className="eyebrow">WAVE {hud.wave} CLEAR</small><h2>내일의 몸을 결정하세요</h2><p>선택한 습관은 다음 웨이브부터 적용됩니다.</p>
         <div className="habit-cards">{hud.cards.map((card) => <article key={card.id}>
-          <span className="card-icon">{card.icon}</span><small>{card.effectType === "permanent" ? "영구 효과" : card.effectType === "instant" ? "즉시 효과" : "다음 웨이브"}</small><h3>{card.name}</h3><p>{card.description}</p>{card.drawback && <em>주의 · {card.drawback}</em>}
+          <span className={`card-art card-${card.id}`} aria-hidden="true" /><small>{card.effectType === "permanent" ? "영구 효과" : card.effectType === "instant" ? "즉시 효과" : "다음 웨이브"}</small><h3>{card.name}</h3><p>{card.description}</p>{card.drawback && <em>주의 · {card.drawback}</em>}
           <button onClick={() => engineRef.current?.chooseCard(card.id)}>이 습관 선택</button>
         </article>)}</div>
       </section></div>}

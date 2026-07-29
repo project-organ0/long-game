@@ -11,6 +11,11 @@ type Spawn = { type: EnemyType; at: number };
 const PATH: Point[] = [{ x: -35, y: 130 }, { x: 170, y: 130 }, { x: 250, y: 280 }, { x: 475, y: 280 }, { x: 585, y: 450 }, { x: 790, y: 450 }, { x: 930, y: 310 }, { x: 1035, y: 310 }];
 const ORGAN_POS: Record<OrganType, Point> = { lung: { x: 210, y: 75 }, liver: { x: 510, y: 390 }, heart: { x: 805, y: 295 } };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
+const ORGAN_FORM: Record<OrganType, { col: number; row: number }> = {
+  lung: { col: 0, row: 1 },
+  liver: { col: 1, row: 1 },
+  heart: { col: 3, row: 0 },
+};
 
 export class DefenseEngine {
   private ctx: CanvasRenderingContext2D;
@@ -41,11 +46,13 @@ export class DefenseEngine {
   private message = "방어 준비";
   private flash = 0;
   private shake = 0;
+  private organForms = new Image();
 
   constructor(private canvas: HTMLCanvasElement, private onHud: (hud: HudState) => void) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas is not supported");
     this.ctx = ctx;
+    this.organForms.src = "/art/player-forms.png";
     canvas.addEventListener("pointerdown", this.onPointer);
     this.emit();
     this.raf = requestAnimationFrame(this.loop);
@@ -262,9 +269,20 @@ export class DefenseEngine {
       const config = ORGANS[id], p = ORGAN_POS[id], level = this.organs[id].level, selected = this.selected === id;
       const range = config.range * GAME_BALANCE.levelRangeMultiplier[level - 1];
       if (selected) { c.beginPath(); c.arc(p.x, p.y, range, 0, Math.PI * 2); c.fillStyle = `${config.color}12`; c.fill(); c.setLineDash([7, 8]); c.strokeStyle = `${config.color}70`; c.lineWidth = 2; c.stroke(); c.setLineDash([]); }
-      c.beginPath(); c.arc(p.x, p.y, 38 + level * 3 + Math.sin(this.elapsed * (id === "heart" ? 8 : 3)) * 2, 0, Math.PI * 2); c.fillStyle = "#222839"; c.shadowColor = config.color; c.shadowBlur = selected ? 28 : 10; c.fill(); c.shadowBlur = 0; c.strokeStyle = config.color; c.lineWidth = 2 + level; c.stroke();
-      c.font = `${30 + level * 2}px serif`; c.textAlign = "center"; c.fillText(config.emoji, p.x, p.y + 11);
-      c.fillStyle = "#fff"; c.font = "800 12px sans-serif"; c.fillText(`${config.name} · LV ${level}`, p.x, p.y + 61); c.textAlign = "start";
+      c.beginPath(); c.ellipse(p.x, p.y + 31, 47 + level * 2, 17, 0, 0, Math.PI * 2); c.fillStyle = "rgba(4,8,9,.48)"; c.fill();
+      c.save();
+      c.translate(p.x, p.y);
+      const pulse = 1 + Math.sin(this.elapsed * (id === "heart" ? 7 : 2.8)) * .018;
+      c.scale(pulse, pulse);
+      c.shadowColor = config.color; c.shadowBlur = selected ? 28 : 11;
+      if (this.organForms.complete && this.organForms.naturalWidth) {
+        const form = ORGAN_FORM[id];
+        c.drawImage(this.organForms, form.col * 384, form.row * 512, 384, 512, -55 - level * 2, -76 - level * 3, 110 + level * 4, 147 + level * 6);
+      } else {
+        c.font = "42px serif"; c.textAlign = "center"; c.fillText(config.emoji, 0, 12);
+      }
+      c.restore(); c.shadowBlur = 0;
+      c.fillStyle = "#fff"; c.font = "800 12px sans-serif"; c.textAlign = "center"; c.fillText(`${config.name} · LV ${level}`, p.x, p.y + 61); c.textAlign = "start";
     }
   }
   private drawEnemy(c: CanvasRenderingContext2D, e: Enemy) {
