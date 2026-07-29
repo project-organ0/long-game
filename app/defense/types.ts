@@ -32,11 +32,16 @@ export interface HabitCard {
 }
 export interface OrganState { id: OrganType; level: number }
 export interface AbilityState { id: AbilityId; cooldown: number; ready: boolean; active: number }
+export interface PhysiologyState {
+  oxygen: number; toxin: number; pulse: number;
+  strain: Record<OrganType, number>;
+}
 export interface HudState {
   phase: GamePhase; wave: number; totalWaves: number; life: number; maxLife: number;
   nutrients: number; elapsed: number; remaining: number; countdown: number; kills: number;
   combo: number; bestCombo: number; speed: number; targetMode: TargetMode;
   selected: OrganType; organs: Record<OrganType, OrganState>;
   abilities: Record<OrganType, AbilityState>;
+  physiology: PhysiologyState;
   cards: HabitCard[]; message: string; clock: string; flavor: string;
 }

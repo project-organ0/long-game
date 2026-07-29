@@ -19,6 +19,7 @@ const initialHud: HudState = {
     liver: { id: "detox", cooldown: 0, ready: true, active: 0 },
     heart: { id: "adrenaline", cooldown: 0, ready: true, active: 0 },
   },
+  physiology: { oxygen: 100, toxin: 0, pulse: 68, strain: { lung: 0, liver: 0, heart: 0 } },
   cards: [], message: "방어 준비", clock: WAVES[0].clock, flavor: WAVES[0].flavor,
 };
 
@@ -90,6 +91,9 @@ export default function DefenseGame() {
         <div><small>시간대</small><strong className="clock">{hud.clock}<i>{hud.wave}/{hud.totalWaves}</i></strong></div>
         <div><small>생명력</small><strong className="life">♥ {hud.life}<i>/{hud.maxLife}</i></strong></div>
         <div><small>영양분</small><strong className="nutrient">● {hud.nutrients}</strong></div>
+        <div className={hud.physiology.oxygen < 45 ? "hud-danger" : ""}><small>산소</small><strong className="oxygen">{Math.round(hud.physiology.oxygen)}<i>%</i></strong></div>
+        <div className={hud.physiology.toxin > 65 ? "hud-danger" : ""}><small>독소</small><strong className="toxin">{Math.round(hud.physiology.toxin)}<i>%</i></strong></div>
+        <div className={hud.physiology.pulse > 125 ? "hud-danger" : ""}><small>심박</small><strong className="pulse">{Math.round(hud.physiology.pulse)}<i>BPM</i></strong></div>
         <div><small>남은 침입자</small><strong>{hud.remaining}</strong></div>
         <div><small>연속 처치</small><strong className="combo">{hud.combo > 0 ? `${hud.combo}×` : "—"}</strong></div>
         <div><small>생존 시간</small><strong>{time}</strong></div>
@@ -145,8 +149,13 @@ export default function DefenseGame() {
         </section>
 
         <aside className="organ-panel">
-          <div className="panel-heading"><span className={`organ-avatar avatar-${hud.selected}`} style={{ backgroundColor: selected.color }} /><div><small>선택 장기 폼</small><h2>{selected.name} 전투원 <i>LV {selectedState.level}</i></h2></div></div>
+          <div className="panel-heading"><span className={`organ-avatar avatar-${hud.selected}`} style={{ backgroundColor: selected.color }} /><div><small>선택 장기 수호자</small><h2>{selected.name} <i>LV {selectedState.level}</i></h2></div></div>
           <p className="role">{selected.role}</p>
+          <div className={`strain-meter ${hud.physiology.strain[hud.selected] > 70 ? "danger" : ""}`}>
+            <span><small>장기 부담도</small><b>{Math.round(hud.physiology.strain[hud.selected])}%</b></span>
+            <i><u style={{ width: `${hud.physiology.strain[hud.selected]}%`, background: selected.color }} /></i>
+            <p>{hud.physiology.strain[hud.selected] > 70 ? "과부하 · 공격 효율이 감소합니다" : "안정 · 정상적으로 방어 중"}</p>
+          </div>
           <div className="stats">
             <div><span>공격력</span><b>{stats.damage}</b></div>
             <div><span>공격속도</span><b>{stats.speed}<small>/초</small></b></div>

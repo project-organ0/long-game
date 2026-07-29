@@ -39,6 +39,8 @@ export class DefenseEngine {
   private paused = false;
   private permanentDamage = 1;
   private adrenaline = 0; // 남은 초
+  private strain: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
+  private overloadTick = 1;
   private next: NextWaveEffects = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
   private organCooldown: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private abilityCd: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
@@ -124,6 +126,7 @@ export class DefenseEngine {
         if (Math.hypot(e.x - p.x, e.y - p.y) <= range) { this.damageEnemy(e, burst, config.color); e.slow = Math.max(e.slow, config.ability.duration); }
       }
       this.rings.push({ x: p.x, y: p.y, r: 12, maxR: range, color: config.color, life: .7, width: 6 });
+      this.strain.lung = Math.max(0, this.strain.lung - 45);
     } else if (id === "liver") {
       // 해독: 사거리 내 독 도트
       const dps = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[level - 1] * this.permanentDamage * 0.9;
@@ -131,9 +134,11 @@ export class DefenseEngine {
         if (Math.hypot(e.x - p.x, e.y - p.y) <= range) { e.poison = config.ability.duration; e.poisonDps = dps; }
       }
       this.rings.push({ x: p.x, y: p.y, r: 12, maxR: range, color: "#c8ff43", life: .7, width: 6 });
+      this.strain.liver = Math.max(0, this.strain.liver - 50);
     } else if (id === "heart") {
-      // 아드레날린: 전 장기 공속 2배
+      // 혈류 조절: 전신 혈류를 늦춰 위기 대응 시간을 확보
       this.adrenaline = config.ability.duration;
+      this.strain.heart = Math.max(0, this.strain.heart - 38);
       for (const t of TYPES) this.rings.push({ x: ORGAN_POS[t].x, y: ORGAN_POS[t].y, r: 8, maxR: 46, color: config.color, life: .5, width: 4 });
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -210,6 +215,7 @@ export class DefenseEngine {
       while (this.queue.length && this.spawnClock >= this.queue[0].at) this.spawn(this.queue.shift()!.type);
       this.moveEnemies(dt);
       this.applyStatuses(dt);
+      this.updatePhysiology(dt);
       this.attack(dt);
       this.moveProjectiles(dt);
       if (!this.queue.length && !this.enemies.length) this.finishWave();
@@ -257,7 +263,8 @@ export class DefenseEngine {
       const base = ENEMIES[enemy.type];
       const slowFactor = enemy.slow > 0 ? .45 : 1;
       const sprintFactor = base.sprint && Math.sin(this.elapsed * 1.7) > .72 ? 1.7 : 1;
-      let move = enemy.speed * dt * slowFactor * sprintFactor;
+      const flowFactor = this.adrenaline > 0 ? .48 : 1;
+      let move = enemy.speed * dt * slowFactor * sprintFactor * flowFactor;
       while (move > 0 && enemy.path < PATH.length - 1) {
         const target = PATH[enemy.path + 1], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
         if (move >= dist) { enemy.x = target.x; enemy.y = target.y; enemy.path++; move -= dist; }
@@ -271,6 +278,34 @@ export class DefenseEngine {
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
     if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; }
+  }
+
+  private updatePhysiology(dt: number) {
+    let lungThreat = 0, liverThreat = 0, heartThreat = 0;
+    for (const enemy of this.enemies) {
+      if (enemy.type === "dust") lungThreat += .55;
+      if (enemy.type === "stress") { lungThreat += .08; heartThreat += .2; }
+      if (enemy.type === "alcohol") liverThreat += .6;
+      if (enemy.type === "sugar") liverThreat += .34;
+      if (enemy.type === "caffeine") heartThreat += .72;
+      if (enemy.type === "fatigue") heartThreat += .62;
+      if (enemy.type === "overwork") heartThreat += 1.1;
+    }
+    const threats: Record<OrganType, number> = { lung: lungThreat, liver: liverThreat, heart: heartThreat };
+    for (const id of TYPES) {
+      const recovery = threats[id] === 0 ? 2.6 : .28;
+      this.strain[id] = Math.max(0, Math.min(100, this.strain[id] + (threats[id] - recovery) * dt));
+    }
+    this.overloadTick -= dt;
+    if (this.overloadTick <= 0) {
+      this.overloadTick = 1;
+      const overloaded = TYPES.filter((id) => this.strain[id] >= 100);
+      if (overloaded.length) {
+        this.life = Math.max(0, this.life - overloaded.length);
+        this.flash = .18; this.shake = .16;
+        this.message = `${overloaded.map((id) => ORGANS[id].name).join("·")} 과부하!`;
+      }
+    }
   }
 
   private applyStatuses(dt: number) {
@@ -312,8 +347,8 @@ export class DefenseEngine {
       const damage = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[state.level - 1] * this.permanentDamage * (config.bonusAgainst === target.type ? config.bonusMultiplier! : 1);
       this.projectiles.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, target: target.id, organ: id, damage, color: config.color, splash: config.splash || 0, life: .5 });
       this.tracers.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, color: config.color, life: .12 });
-      const adrenalineMult = this.adrenaline > 0 ? 2 : 1;
-      this.organCooldown[id] = 1 / (config.baseAttackSpeed * GAME_BALANCE.levelSpeedMultiplier[state.level - 1] * this.next.attackSpeed * adrenalineMult);
+      const strainMult = this.strain[id] > 70 ? .62 : 1;
+      this.organCooldown[id] = 1 / (config.baseAttackSpeed * GAME_BALANCE.levelSpeedMultiplier[state.level - 1] * this.next.attackSpeed * strainMult);
     }
   }
 
@@ -376,12 +411,16 @@ export class DefenseEngine {
       const cd = this.abilityCd[id], total = ORGANS[id].ability.cooldown;
       abilities[id] = { id: ORGANS[id].ability.id, cooldown: cd, ready: cd <= 0, active: id === "heart" ? this.adrenaline : 0 };
     }
+    const oxygen = Math.max(0, Math.min(100, 100 - this.strain.lung * .78));
+    const toxin = Math.max(0, Math.min(100, this.strain.liver));
+    const pulse = Math.max(55, 68 + this.strain.heart * .82 - (this.adrenaline > 0 ? 24 : 0));
     this.onHud({
       phase: this.phase, wave: this.wave, totalWaves: WAVES.length, life: this.life, maxLife: GAME_BALANCE.maxLife,
       nutrients: Math.floor(this.nutrients), elapsed: this.elapsed, remaining: this.enemies.length + this.queue.length,
       countdown: Math.max(0, this.countdown), kills: this.kills, combo: this.combo, bestCombo: this.bestCombo,
       speed: this.speed, targetMode: this.targetMode, selected: this.selected, organs: structuredClone(this.organs),
-      abilities, cards: this.cards, message: this.message, clock: w.clock, flavor: w.flavor,
+      abilities, physiology: { oxygen, toxin, pulse, strain: { ...this.strain } },
+      cards: this.cards, message: this.message, clock: w.clock, flavor: w.flavor,
     });
   }
 
@@ -401,7 +440,7 @@ export class DefenseEngine {
     for (const shot of this.projectiles) { c.beginPath(); c.arc(shot.x, shot.y, shot.organ === "lung" ? 9 : shot.organ === "liver" ? 7 : 5, 0, Math.PI * 2); c.fillStyle = shot.color; c.shadowColor = shot.color; c.shadowBlur = 12; c.fill(); c.shadowBlur = 0; }
     for (const p of this.particles) { c.globalAlpha = Math.max(0, p.life); c.fillStyle = p.color; c.fillRect(p.x, p.y, 4, 4); } c.globalAlpha = 1;
     for (const f of this.floaters) { c.globalAlpha = Math.min(1, f.life * 2.4); c.fillStyle = f.color; c.font = `800 ${f.size}px sans-serif`; c.textAlign = "center"; c.fillText(f.text, f.x, f.y); } c.globalAlpha = 1; c.textAlign = "start";
-    if (this.adrenaline > 0) { c.strokeStyle = `rgba(255,100,124,${.25 + Math.sin(this.elapsed * 12) * .15})`; c.lineWidth = 6; c.strokeRect(3, 3, 994, 594); }
+    if (this.adrenaline > 0) { c.strokeStyle = `rgba(78,229,225,${.25 + Math.sin(this.elapsed * 6) * .15})`; c.lineWidth = 6; c.strokeRect(3, 3, 994, 594); }
     if (this.flash > 0) { c.fillStyle = `rgba(255,35,68,${this.flash * .45})`; c.fillRect(0, 0, 1000, 600); }
     if (this.combo >= GAME_BALANCE.comboStep) { c.fillStyle = "#f2c66d"; c.font = "900 22px sans-serif"; c.textAlign = "right"; c.fillText(`${this.combo} COMBO`, 980, 40); c.textAlign = "start"; }
     if (this.paused) { c.fillStyle = "rgba(8,9,16,.62)"; c.fillRect(0, 0, 1000, 600); c.fillStyle = "#fff"; c.textAlign = "center"; c.font = "800 34px sans-serif"; c.fillText("일시 정지", 500, 292); c.font = "15px sans-serif"; c.fillStyle = "#aeb4c2"; c.fillText("몸도 가끔은 쉬어야 합니다", 500, 325); c.textAlign = "start"; }

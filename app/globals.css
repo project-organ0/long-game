@@ -121,8 +121,18 @@ button { color:inherit }
 .card-snack{background-position:0 100%}.card-allnight{background-position:33.333% 0}.card-drinks{background-position:33.333% 100%}.card-meditation{background-position:100% 100%}
 .result{border:2px solid var(--acid);border-radius:20px;background:#17201f}.result-icon{background:var(--acid)}.result button{background:var(--acid);color:var(--ink);border:2px solid var(--ink);border-radius:999px}
 
+@keyframes vital-alert{to{box-shadow:0 0 18px rgba(255,113,91,.28)}}
+.strain-meter{margin:12px 0;padding:11px;border:1px solid rgba(16,21,21,.18);border-radius:10px;background:rgba(255,255,255,.75)}
+.strain-meter>span{display:flex;align-items:center;justify-content:space-between}.strain-meter>span small{color:#596560}.strain-meter>span b{font-size:13px}
+.strain-meter>i{display:block;height:6px;margin-top:7px;background:#d7d9d0;overflow:hidden}.strain-meter>i u{display:block;height:100%;text-decoration:none;transition:width .2s}
+.strain-meter p{margin:7px 0 0;color:#65706c;font-size:9px}.strain-meter.danger{border-color:var(--coral);background:#fff0ea}.strain-meter.danger p{color:#ba422f;font-weight:800}
+
+.hud{grid-template-columns:repeat(9,1fr)}
+.hud>div{padding:11px 12px}.hud strong{font-size:18px}.hud .oxygen{color:#1d9f9a}.hud .toxin{color:#718d00}.hud .pulse{color:#e24e60}
+.hud .hud-danger{background:#fff0ea;animation:vital-alert .8s ease-in-out infinite alternate}.hud .hud-danger strong{color:#d93f31}
+
 /* ── 배속 · HUD 확장 ── */
-.hud{grid-template-columns:repeat(6,1fr)}
+.hud{grid-template-columns:repeat(9,1fr)}
 .hud .clock{font-size:19px}.hud .combo{color:var(--coral)}
 .speed-control{display:flex;gap:4px;margin-left:auto}
 .speed-control button{width:34px;height:30px;border:1.5px solid var(--ink);background:white;border-radius:8px;font-weight:900;font-size:12px;cursor:pointer;box-shadow:2px 2px 0 var(--ink)}
@@ -154,7 +164,7 @@ button { color:inherit }
 .upgrade span i{font-style:normal;font-size:10px;opacity:.7;margin-left:3px}
 
 @media(max-width:900px){
-  .hud{grid-template-columns:repeat(3,1fr)}.hud>div:nth-child(4),.hud>div:nth-child(5),.hud>div:nth-child(6){display:none}
+  .hud{grid-template-columns:repeat(3,1fr)}.hud>div:nth-child(n+4){display:none}
   .ability .ab-meta small{display:none}.start-now{bottom:210px}
 }
 @media(max-width:520px){

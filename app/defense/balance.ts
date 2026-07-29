@@ -38,7 +38,7 @@ export const ORGANS: Record<OrganType, OrganConfig> = {
     id: "heart", name: "심장", emoji: "🫀", role: "맥박탄 · 초고속 단일", color: "#ff647c",
     baseDamage: 11, baseAttackSpeed: 1.9, range: 172, maxLevel: 5,
     bonusAgainst: "caffeine", bonusMultiplier: 1.8,
-    ability: { id: "adrenaline", name: "아드레날린", icon: "💓", description: "5초간 모든 장기 공격속도 2배", cooldown: 20, duration: 5 },
+    ability: { id: "adrenaline", name: "혈류 조절", icon: "💓", description: "5초간 전체 혈류를 52% 늦추고 심장 부담을 낮춤", cooldown: 20, duration: 5 },
   },
 };
 
