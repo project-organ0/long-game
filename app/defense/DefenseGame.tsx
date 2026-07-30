@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { DefenseEngine } from "./game-engine";
 import { CELL_TOWERS, GAME_BALANCE, ORGANS, WAVES } from "./balance";
-import type { HudState, OrganType, TargetMode, TowerType } from "./types";
+import type { HudState, OrganType, TargetMode } from "./types";
 
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const TARGET_LABEL: Record<TargetMode, string> = { first: "선두 우선", last: "후미 우선", strong: "최강 우선" };
@@ -154,31 +154,45 @@ export default function DefenseGame() {
         <aside className="organ-panel">
           {hud.selectedSlot !== null ? <div className="tower-panel">
             <div className="tower-panel-head">
-              <small>배치 슬롯 {hud.selectedSlot + 1}</small>
+              <small>배치 슬롯 {hud.selectedSlot + 1} · {selectedTower ? ORGANS[selectedTower.affinity].name : "지역"} 적성</small>
               <h2>{selectedTowerConfig ? selectedTowerConfig.name : "세포 타워 배치"}</h2>
-              <p>{selectedTowerConfig ? selectedTowerConfig.role : "혈관 주변 슬롯에 방어 세포를 배치하세요."}</p>
+              <p>{selectedTowerConfig ? selectedTowerConfig.role : "미분화 세포를 심고 위치에 맞춰 진화시키세요."}</p>
             </div>
             {!selectedTower ? <div className="tower-shop">
-              {(Object.keys(CELL_TOWERS) as TowerType[]).map((type) => {
-                const tower=CELL_TOWERS[type];
-                return <button key={type} onClick={()=>engineRef.current?.buildTower(type)} disabled={hud.nutrients<tower.cost} style={{"--tower":tower.color} as React.CSSProperties}>
-                  <span className={`tower-thumb tower-${tower.family}`} />
-                  <span><b>{tower.name}</b><small>{tower.role}</small></span><em>● {tower.cost}</em>
-                </button>;
-              })}
+              <button onClick={()=>engineRef.current?.buildTower("stem")} disabled={hud.nutrients<GAME_BALANCE.stemCost} style={{"--tower":CELL_TOWERS.stem.color} as React.CSSProperties}>
+                <img className="tower-thumb-img" src="/art/cells-v2/cell-undifferentiated.png" alt="" />
+                <span><b>미분화 세포 심기</b><small>어디서든 세 계열로 성장</small></span><em>● {GAME_BALANCE.stemCost}</em>
+              </button>
             </div> : <>
-              <div className={`tower-portrait tower-${selectedTowerConfig!.family}`}><span>LV {selectedTower.level}</span></div>
+              <div className="tower-portrait-img">
+                <img src={selectedTower.level===1?"/art/cells-v2/cell-undifferentiated.png":`/art/cells-v2/cell-${selectedTower.type}-${selectedTower.level}.png`} alt="" />
+                <span>LV {selectedTower.level}</span>
+              </div>
               <div className="tower-stats">
                 <p><span>공격력</span><b>{Math.round(selectedTowerConfig!.damage*(1+(selectedTower.level-1)*.45))}</b></p>
                 <p><span>공격속도</span><b>{selectedTowerConfig!.attackSpeed}<small>/초</small></b></p>
                 <p><span>사거리</span><b>{selectedTowerConfig!.range}</b></p>
               </div>
-              {selectedTower.level<3 && <div className="branch-actions">
-                {!selectedTower.branch && <small>성장 방향 선택</small>}
-                {(!selectedTower.branch || selectedTower.branch==="power") && <button disabled={hud.nutrients<35+selectedTower.level*35} onClick={()=>engineRef.current?.upgradeTower("power")}><b>공격 분화</b><span>피해량 +35%</span><em>● {35+selectedTower.level*35}</em></button>}
-                {(!selectedTower.branch || selectedTower.branch==="utility") && <button disabled={hud.nutrients<35+selectedTower.level*35} onClick={()=>engineRef.current?.upgradeTower("utility")}><b>기능 분화</b><span>사거리·특수효과 강화</span><em>● {35+selectedTower.level*35}</em></button>}
+              {selectedTower.level===1 && <div className="evolution-actions">
+                <small>진화 방향 선택 · 현재 위치는 {ORGANS[selectedTower.affinity].name} 적성</small>
+                {TYPES.map((family)=>{
+                  const preferred=family===selectedTower.affinity;
+                  const evolveCost=preferred?GAME_BALANCE.differentiationCost:Math.round(GAME_BALANCE.differentiationCost*1.35);
+                  return <button key={family} className={preferred?"preferred":""} disabled={hud.nutrients<evolveCost} onClick={()=>engineRef.current?.evolveTower(family)}>
+                    <img src={`/art/cells-v2/cell-${family}-2.png`} alt="" />
+                    <span><b>{CELL_TOWERS[family].name}</b><small>{preferred?"지역 적합 · 비용 할인":CELL_TOWERS[family].role}</small></span><em>● {evolveCost}</em>
+                  </button>;
+                })}
               </div>}
-              {selectedTower.level>=3 && <p className="tower-max">MAX · 분화 완료</p>}
+              {selectedTower.level===2 && <div className="evolution-actions">
+                <small>전문화 가능 · 머리 위 ↑ 표시를 눌러도 열립니다</small>
+                <button className="preferred" disabled={hud.nutrients<(selectedTower.affinity===selectedTower.type?GAME_BALANCE.specializationCost:Math.round(GAME_BALANCE.specializationCost*1.35))} onClick={()=>engineRef.current?.evolveTower(selectedTower.type as OrganType)}>
+                  <img src={`/art/cells-v2/cell-${selectedTower.type}-3.png`} alt="" />
+                  <span><b>{selectedTower.type==="lung"?"폐포 청소부":selectedTower.type==="liver"?"해독 효소 기술자":"혈소판 방위대"}</b><small>최종 전문 세포로 진화</small></span>
+                  <em>● {selectedTower.affinity===selectedTower.type?GAME_BALANCE.specializationCost:Math.round(GAME_BALANCE.specializationCost*1.35)}</em>
+                </button>
+              </div>}
+              {selectedTower.level>=3 && <p className="tower-max">MAX · 전문 분화 완료</p>}
               <button className="sell-tower" onClick={()=>engineRef.current?.sellTower()}>타워 회수 · 70% 환급</button>
             </>}
             <div className="synergy-box">
@@ -199,7 +213,7 @@ export default function DefenseGame() {
             <div><span>공격속도</span><b>{stats.speed}<small>/초</small></b></div>
             <div><span>사거리</span><b>{stats.range}</b></div>
           </div>
-          <div className="special"><small>SPECIAL</small><p>{selected.bonusAgainst === "dust" ? "미세먼지에 70% 추가 피해 · 주변 광역 피해" : selected.bonusAgainst === "alcohol" ? "알코올에 90% 추가 피해" : "카페인에 80% 추가 피해 · 초고속 연사"}</p></div>
+          <div className="special"><small>SPECIAL</small><p>{selected.bonusAgainst === "dust" ? "미세먼지 특화 · 주변 광역 정화" : selected.bonusAgainst === "toxin" ? "독소 특화 · 지속 해독 피해" : "바이러스 특화 · 초고속 응고 공격"}</p></div>
           <div className="ability-info"><small>액티브 · {selected.ability.name}</small><p>{selected.ability.description}</p></div>
           <button className="upgrade" disabled={selectedState.level >= maxLevel || hud.nutrients < cost} onClick={() => engineRef.current?.upgrade(hud.selected)}>
             {selectedState.level >= maxLevel ? "최대 레벨" : <><span>장기 강화 <i>Lv.{selectedState.level + 1}</i></span><b>● {cost}</b></>}

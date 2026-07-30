@@ -1,9 +1,9 @@
 export type OrganType = "heart" | "lung" | "liver";
-export type EnemyType = "stress" | "dust" | "alcohol" | "sugar" | "caffeine" | "fatigue" | "overwork";
+export type EnemyType = "bacteria" | "dust" | "toxin" | "fat" | "virus" | "inflammation";
 export type GamePhase = "prep" | "wave" | "cards" | "victory" | "defeat";
 export type AbilityId = "breath" | "detox" | "adrenaline";
 export type TargetMode = "first" | "last" | "strong";
-export type TowerType = "alveolus" | "oxygen" | "enzyme" | "kupffer" | "pulse" | "platelet";
+export type TowerType = "stem" | OrganType;
 export type TowerBranch = "power" | "utility";
 
 export interface OrganConfig {
@@ -22,6 +22,9 @@ export interface EnemyConfig {
   regen?: number;      // 초당 자가 회복 (만성피로)
   sprint?: boolean;    // 주기적 질주 (과로 보스)
   boss?: boolean;
+  split?: boolean;
+  dodge?: boolean;
+  debuff?: boolean;
 }
 export interface WaveGroup { type: EnemyType; count: number; spawnInterval: number; delay?: number }
 export interface WaveConfig { wave: number; clock: string; label: string; flavor: string; groups: WaveGroup[] }
@@ -45,6 +48,8 @@ export interface TowerConfig {
 }
 export interface PlacedTowerState {
   id: number; type: TowerType; slot: number; level: number; branch?: TowerBranch;
+  affinity: OrganType;
+  canEvolve: boolean;
 }
 export interface HudState {
   phase: GamePhase; wave: number; totalWaves: number; life: number; maxLife: number;

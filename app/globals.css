@@ -141,6 +141,37 @@ button { color:inherit }
 .sell-tower,.back-organ{width:100%;margin-top:8px;padding:9px;border:1px solid rgba(16,21,21,.35);border-radius:999px;background:transparent;color:#5b6662;font-size:9px;cursor:pointer}.back-organ{border-color:var(--ink);color:var(--ink);font-weight:900}.tower-max{text-align:center;color:#567000;font:900 10px/1 monospace}
 .synergy-box{margin-top:12px;padding:11px;border-radius:10px;background:#17201f;color:white}.synergy-box small{color:var(--acid)}.synergy-box b{display:block;margin-top:7px;color:var(--acid);font-size:10px}.synergy-box p{margin:7px 0 0;color:#9eaaa6;font-size:9px;line-height:1.4}
 
+.tower-thumb-img{width:42px;height:42px;object-fit:contain;filter:drop-shadow(0 4px 3px rgba(0,0,0,.2))}
+.tower-portrait-img{position:relative;width:126px;height:108px;margin:5px auto}
+.tower-portrait-img img{width:100%;height:100%;object-fit:contain}
+.tower-portrait-img span{position:absolute;right:2px;bottom:2px;padding:4px 7px;border-radius:999px;background:var(--ink);color:var(--acid);font:900 9px/1 monospace}
+.evolution-actions{display:grid;gap:5px;margin-top:8px}
+.evolution-actions>small{margin-bottom:2px}
+.evolution-actions button{display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:8px;min-height:58px;padding:5px 8px;border:1.5px solid rgba(16,21,21,.25);border-radius:11px;background:white;color:var(--ink);text-align:left;cursor:pointer}
+.evolution-actions button.preferred{border:2px solid #769300;background:#f4ffd1}
+.evolution-actions button:disabled{opacity:.42;cursor:not-allowed}
+.evolution-actions img{width:48px;height:48px;object-fit:contain}
+.evolution-actions b,.evolution-actions small{display:block}.evolution-actions b{font-size:11px}.evolution-actions small{margin-top:3px;color:#65706c;font-size:8px}
+.evolution-actions em{font-style:normal;font-size:9px;font-weight:900}
+
+/* One-screen defense layout */
+body:has(.game-shell){overflow:hidden}
+.game-shell{height:100dvh;min-height:0;padding:7px 12px;display:flex;flex-direction:column;overflow:hidden}
+.game-header{width:100%;min-height:42px;height:42px;flex:0 0 42px}
+.game-header h1{font-size:24px}.game-header p{margin:0}
+.hud{width:100%;margin:7px auto;flex:0 0 48px;min-height:48px}
+.hud>div{padding:6px 9px}.hud strong{font-size:16px}.hud .clock{font-size:17px}
+.game-grid{width:100%;flex:1;min-height:0;grid-template-columns:minmax(0,1fr) 276px;gap:9px}
+.arena-wrap{height:100%;display:flex;flex-direction:column;min-height:0}
+.arena-wrap canvas{width:100%;height:calc(100% - 62px);min-height:0;aspect-ratio:auto}
+.control-bar{height:62px;flex:0 0 62px;padding:6px}
+.ability{padding:5px 9px}.ability .ab-icon{font-size:19px}.ability .ab-meta b{font-size:11px}
+.organ-panel{height:100%;padding:12px;overflow-y:auto;overscroll-behavior:contain}
+.tower-panel-head{padding-bottom:7px}.tower-panel-head h2{font-size:18px;margin:3px 0}
+.tower-stats p{padding:6px}.tower-stats b{font-size:14px}
+.synergy-box{margin-top:7px;padding:8px}.sell-tower,.back-organ{margin-top:5px;padding:7px}
+.wave-list>div{padding:4px}.start-now{bottom:76px}
+
 /* ── 배속 · HUD 확장 ── */
 .hud{grid-template-columns:repeat(9,1fr)}
 .hud .clock{font-size:19px}.hud .combo{color:var(--coral)}

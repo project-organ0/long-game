@@ -1,10 +1,12 @@
 import { CELL_TOWERS, ENEMIES, GAME_BALANCE, HABIT_CARDS, ORGANS, WAVES } from "./balance";
-import type { EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType, TargetMode, TowerBranch, TowerType } from "./types";
+import type { EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType, TargetMode, TowerType } from "./types";
 
 type Point = { x: number; y: number };
+type CellSlot = Point & { affinity: OrganType };
 type Enemy = {
   id: number; type: EnemyType; hp: number; maxHp: number; speed: number; path: number; x: number; y: number;
   hit: number; dead: number; slow: number; poison: number; poisonDps: number; regenClock: number;
+  dodged: boolean; splitDepth: number;
 };
 type Projectile = { x: number; y: number; tx: number; ty: number; target: number; organ: OrganType; damage: number; color: string; splash: number; life: number };
 type Floater = { x: number; y: number; text: string; color: string; life: number; size: number };
@@ -12,15 +14,16 @@ type Particle = { x: number; y: number; vx: number; vy: number; color: string; l
 type Tracer = { x: number; y: number; tx: number; ty: number; color: string; life: number };
 type Ring = { x: number; y: number; r: number; maxR: number; color: string; life: number; width: number };
 type Spawn = { type: EnemyType; at: number };
-type PlacedTower = { id: number; type: TowerType; slot: number; level: number; branch?: TowerBranch; cooldown: number; attackAnim: number };
+type PlacedTower = { id: number; type: TowerType; slot: number; level: number; cooldown: number; attackAnim: number };
 
 const PATH: Point[] = [{ x: -35, y: 130 }, { x: 170, y: 130 }, { x: 250, y: 280 }, { x: 475, y: 280 }, { x: 585, y: 450 }, { x: 790, y: 450 }, { x: 930, y: 310 }, { x: 1035, y: 310 }];
 const ORGAN_POS: Record<OrganType, Point> = { lung: { x: 220, y: 185 }, liver: { x: 515, y: 385 }, heart: { x: 790, y: 300 } };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const CORE: Point = { x: 945, y: 310 };
-const TOWER_SLOTS: Point[] = [
-  { x:105,y:68 },{ x:310,y:205 },{ x:360,y:355 },{ x:470,y:170 },
-  { x:620,y:350 },{ x:690,y:520 },{ x:840,y:400 },{ x:900,y:205 },
+const TOWER_SLOTS: CellSlot[] = [
+  { x:105,y:68,affinity:"lung" },{ x:310,y:205,affinity:"lung" },
+  { x:360,y:355,affinity:"liver" },{ x:470,y:170,affinity:"liver" },{ x:620,y:350,affinity:"liver" },
+  { x:690,y:520,affinity:"heart" },{ x:840,y:400,affinity:"heart" },{ x:900,y:205,affinity:"heart" },
 ];
 
 export class DefenseEngine {
@@ -49,7 +52,8 @@ export class DefenseEngine {
   private towers: PlacedTower[] = [];
   private selectedSlot: number | null = 0;
   private towerId = 0;
-  private guardianSprites = new Image();
+  private cellImages: Record<string, HTMLImageElement> = {};
+  private enemyImages: Partial<Record<EnemyType, HTMLImageElement>> = {};
   private next: NextWaveEffects = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
   private organCooldown: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private abilityCd: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
@@ -72,7 +76,12 @@ export class DefenseEngine {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas is not supported");
     this.ctx = ctx;
-    this.guardianSprites.src = "/art/cell-guardians-v1.png";
+    for (const key of ["undifferentiated","lung-2","lung-3","liver-2","liver-3","heart-2","heart-3"]) {
+      const image = new Image(); image.src = `/art/cells-v2/cell-${key}.png`; this.cellImages[key] = image;
+    }
+    for (const type of ["bacteria","dust","toxin","fat","virus","inflammation"] as EnemyType[]) {
+      const image = new Image(); image.src = `/art/enemies-v2/enemy-${type === "inflammation" ? "boss" : type}.png`; this.enemyImages[type] = image;
+    }
     canvas.addEventListener("pointerdown", this.onPointer);
     this.emit();
     this.raf = requestAnimationFrame(this.loop);
@@ -93,28 +102,32 @@ export class DefenseEngine {
     this.emit();
   }
 
-  buildTower(type: TowerType) {
+  buildTower(type: TowerType = "stem") {
     if (this.selectedSlot === null || this.towers.some((t) => t.slot === this.selectedSlot)) return false;
-    const config = CELL_TOWERS[type];
+    const config = CELL_TOWERS.stem;
     if (this.nutrients < config.cost) { this.message = "영양분이 부족합니다"; this.emit(); return false; }
     this.nutrients -= config.cost;
-    this.towers.push({ id: ++this.towerId, type, slot: this.selectedSlot, level: 1, cooldown: .15, attackAnim: 0 });
+    this.towers.push({ id: ++this.towerId, type:"stem", slot: this.selectedSlot, level: 1, cooldown: .15, attackAnim: 0 });
     const p = TOWER_SLOTS[this.selectedSlot];
     this.rings.push({ x:p.x,y:p.y,r:8,maxR:54,color:config.color,life:.65,width:4 });
     this.message = `${config.name} 배치 완료`;
     this.emit(); return true;
   }
 
-  upgradeTower(branch: TowerBranch) {
+  evolveTower(family: OrganType) {
     if (this.selectedSlot === null) return false;
     const tower = this.towers.find((t) => t.slot === this.selectedSlot);
     if (!tower || tower.level >= 3) return false;
-    const cost = 35 + tower.level * 35;
+    const affinity = TOWER_SLOTS[tower.slot].affinity;
+    const base = tower.level === 1 ? GAME_BALANCE.differentiationCost : GAME_BALANCE.specializationCost;
+    const cost = family === affinity ? base : Math.round(base * 1.35);
     if (this.nutrients < cost) { this.message = "영양분이 부족합니다"; this.emit(); return false; }
-    this.nutrients -= cost; tower.level++; tower.branch ??= branch;
-    const p=TOWER_SLOTS[tower.slot], color=CELL_TOWERS[tower.type].color;
+    if (tower.level === 1) tower.type = family;
+    else if (tower.type !== family) return false;
+    this.nutrients -= cost; tower.level++;
+    const p=TOWER_SLOTS[tower.slot], color=CELL_TOWERS[family].color;
     this.rings.push({x:p.x,y:p.y,r:8,maxR:70,color,life:.7,width:5});
-    this.message=`${CELL_TOWERS[tower.type].name} · ${tower.branch==="power"?"공격 분화":"기능 분화"} Lv.${tower.level}`;
+    this.message=tower.level === 2 ? `${ORGANS[family].name} 계열로 분화!` : `${CELL_TOWERS[family].name} 전문화 완료!`;
     this.emit(); return true;
   }
 
@@ -123,8 +136,9 @@ export class DefenseEngine {
     const index = this.towers.findIndex((t) => t.slot === this.selectedSlot);
     if (index < 0) return false;
     const tower=this.towers[index], base=CELL_TOWERS[tower.type];
-    let invested=base.cost;
-    for(let level=1;level<tower.level;level++) invested+=35+level*35;
+    let invested=GAME_BALANCE.stemCost;
+    if(tower.level>=2) invested+=GAME_BALANCE.differentiationCost;
+    if(tower.level>=3) invested+=GAME_BALANCE.specializationCost;
     this.nutrients += Math.round(invested*.7);
     this.towers.splice(index,1); this.message=`${base.name} 회수`; this.emit(); return true;
   }
@@ -204,9 +218,9 @@ export class DefenseEngine {
     }
     if (id === "vitamin") this.abilityCd = { lung: 0, liver: 0, heart: 0 };
     if (id === "energy") this.next.attackSpeed = 1.35;
-    if (id === "snack") { this.nutrients += 130; this.next.extraEnemies.push("sugar", "sugar", "sugar"); }
+    if (id === "snack") { this.nutrients += 130; this.next.extraEnemies.push("fat", "fat", "fat"); }
     if (id === "allnight") { this.upgrade(this.selected, true); this.life = Math.max(0, this.life - 2); }
-    if (id === "drinks") { this.nutrients += 180; this.next.extraEnemies.push("alcohol", "alcohol"); }
+    if (id === "drinks") { this.nutrients += 180; this.next.extraEnemies.push("toxin", "toxin"); }
     if (id === "meditation") this.next.enemySpeed = .82;
     if (id === "walk") { this.life = Math.min(GAME_BALANCE.maxLife, this.life + 1); this.nutrients += 60; }
     if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; this.emit(); return; }
@@ -225,7 +239,9 @@ export class DefenseEngine {
     const y = (event.clientY - rect.top) * 600 / rect.height;
     for (let i=0;i<TOWER_SLOTS.length;i++) {
       const p=TOWER_SLOTS[i];
-      if (Math.hypot(x-p.x,y-p.y)<38) { this.selectedSlot=i; this.emit(); return; }
+      const tower=this.towers.find((t)=>t.slot===i);
+      const evolveMarker=tower&&tower.level<3&&Math.hypot(x-p.x,y-(p.y-43))<18;
+      if (Math.hypot(x-p.x,y-p.y)<38||evolveMarker) { this.selectedSlot=i; this.message=evolveMarker?"진화 방향을 선택하세요":this.message;this.emit();return; }
     }
     for (const id of TYPES) {
       const p = ORGAN_POS[id];
@@ -305,6 +321,7 @@ export class DefenseEngine {
       id: ++this.enemyId, type, hp, maxHp: hp,
       speed: base.speed * (1 + (this.wave - 1) * .02) * this.next.enemySpeed,
       path: 0, x: PATH[0].x, y: PATH[0].y, hit: 0, dead: 0, slow: 0, poison: 0, poisonDps: 0, regenClock: 0,
+      dodged:false, splitDepth:0,
     });
   }
 
@@ -336,12 +353,11 @@ export class DefenseEngine {
     let lungThreat = 0, liverThreat = 0, heartThreat = 0;
     for (const enemy of this.enemies) {
       if (enemy.type === "dust") lungThreat += .55;
-      if (enemy.type === "stress") { lungThreat += .08; heartThreat += .2; }
-      if (enemy.type === "alcohol") liverThreat += .6;
-      if (enemy.type === "sugar") liverThreat += .34;
-      if (enemy.type === "caffeine") heartThreat += .72;
-      if (enemy.type === "fatigue") heartThreat += .62;
-      if (enemy.type === "overwork") heartThreat += 1.1;
+      if (enemy.type === "bacteria") { lungThreat += .12; heartThreat += .08; }
+      if (enemy.type === "toxin") liverThreat += .68;
+      if (enemy.type === "fat") liverThreat += .38;
+      if (enemy.type === "virus") heartThreat += .72;
+      if (enemy.type === "inflammation") { lungThreat += .45; liverThreat += .62; heartThreat += .8; }
     }
     const threats: Record<OrganType, number> = { lung: lungThreat, liver: liverThreat, heart: heartThreat };
     for (const id of TYPES) {
@@ -390,11 +406,11 @@ export class DefenseEngine {
   private towerSynergy(tower: PlacedTower) {
     const config=CELL_TOWERS[tower.type], p=TOWER_SLOTS[tower.slot];
     const neighbors=this.towers.filter((other)=>other.id!==tower.id&&Math.hypot(TOWER_SLOTS[other.slot].x-p.x,TOWER_SLOTS[other.slot].y-p.y)<185);
-    const families=new Set(neighbors.map((t)=>CELL_TOWERS[t.type].family));
+    const families=new Set(neighbors.filter((t)=>t.type!=="stem").map((t)=>CELL_TOWERS[t.type].family));
     return {
-      speed: families.has("heart")&&config.family!=="heart" ? 1.25 : 1,
-      damage: families.has("liver")&&config.family==="lung" ? 1.2 : 1,
-      control: families.has("lung")&&config.family==="heart",
+      speed: tower.type!=="stem"&&families.has("heart")&&config.family!=="heart" ? 1.25 : 1,
+      damage: tower.type!=="stem"&&families.has("liver")&&config.family==="lung" ? 1.2 : 1,
+      control: tower.type==="heart"&&families.has("lung"),
     };
   }
 
@@ -403,23 +419,24 @@ export class DefenseEngine {
       tower.cooldown-=dt; if(tower.cooldown>0)continue;
       const config=CELL_TOWERS[tower.type], p=TOWER_SLOTS[tower.slot], synergy=this.towerSynergy(tower);
       const levelMult=1+(tower.level-1)*.45;
-      const range=config.range*(1+(tower.level-1)*.08)*(tower.branch==="utility"?1.18:1);
+      const range=config.range*(1+(tower.level-1)*.08);
       const list=this.enemies.filter((e)=>Math.hypot(e.x-p.x,e.y-p.y)<=range);
       if(!list.length)continue;
       const target=this.pickTarget(list);
-      let damage=config.damage*levelMult*synergy.damage*(tower.branch==="power"?1.35:1);
+      let damage=config.damage*levelMult*synergy.damage;
       if(config.bonusAgainst===target.type)damage*=config.bonusMultiplier??1;
       const victims=config.splash?this.enemies.filter((e)=>Math.hypot(e.x-target.x,e.y-target.y)<=config.splash!):[target];
       for(const victim of victims){
         this.damageEnemy(victim,damage*(victim===target?1:.58),config.color);
-        if(tower.type==="oxygen")victim.slow=Math.max(victim.slow,tower.branch==="utility"?2.5:1.2);
-        if(tower.type==="enzyme"){victim.poison=Math.max(victim.poison,2.5);victim.poisonDps=Math.max(victim.poisonDps,damage*.35)}
-        if(tower.type==="platelet"||synergy.control)victim.slow=Math.max(victim.slow,tower.branch==="utility"?2.2:.8);
+        if(tower.type==="lung")victim.slow=Math.max(victim.slow,1.1);
+        if(tower.type==="liver"){victim.poison=Math.max(victim.poison,2.5);victim.poisonDps=Math.max(victim.poisonDps,damage*.35)}
+        if(tower.type==="heart"||synergy.control)victim.slow=Math.max(victim.slow,.8);
       }
       this.tracers.push({x:p.x,y:p.y,tx:target.x,ty:target.y,color:config.color,life:.16});
       if(config.splash)this.rings.push({x:target.x,y:target.y,r:5,maxR:config.splash,color:config.color,life:.3,width:2});
       tower.attackAnim=.48;
-      tower.cooldown=1/(config.attackSpeed*synergy.speed*(tower.branch==="utility"?1.12:1));
+      const toxinDebuff=this.enemies.some((e)=>e.type==="toxin"&&Math.hypot(e.x-p.x,e.y-p.y)<125)?.72:1;
+      tower.cooldown=1/(config.attackSpeed*synergy.speed*toxinDebuff);
     }
     this.enemies=this.enemies.filter((e)=>!e.dead);
   }
@@ -465,18 +482,33 @@ export class DefenseEngine {
 
   private damageEnemy(enemy: Enemy, dealt: number, color: string, silent = false) {
     if (enemy.dead) return;
+    if (!silent && ENEMIES[enemy.type].dodge && !enemy.dodged) {
+      enemy.dodged=true;
+      this.floaters.push({x:enemy.x,y:enemy.y-20,text:"회피!",color:"#d7d1ff",life:.7,size:13});
+      return;
+    }
+    if(enemy.type==="dust"){
+      const pack=this.enemies.filter((e)=>e!==enemy&&e.type==="dust"&&Math.hypot(e.x-enemy.x,e.y-enemy.y)<72).length;
+      dealt*=Math.max(.48,1-pack*.16);
+    }
     enemy.hp -= dealt; enemy.hit = .12;
     if (!silent) this.floaters.push({ x: enemy.x, y: enemy.y - 20, text: `${Math.round(dealt)}`, color, life: .6, size: 15 });
     if (enemy.hp <= 0) {
       enemy.dead = 1; this.kills++;
       this.combo++; this.comboTimer = 3.2; this.bestCombo = Math.max(this.bestCombo, this.combo);
       const mult = Math.min(GAME_BALANCE.comboMax, 1 + Math.floor(this.combo / GAME_BALANCE.comboStep));
-      const reward = Math.round(ENEMIES[enemy.type].reward * mult);
+      const reward = enemy.splitDepth ? 2 : Math.round(ENEMIES[enemy.type].reward * mult);
       this.nutrients += reward;
       this.floaters.push({ x: enemy.x, y: enemy.y - 34, text: mult > 1 ? `+${reward} ×${mult}` : `+${reward}`, color: mult > 1 ? "#f2c66d" : "#80e0a7", life: .8, size: mult > 1 ? 17 : 13 });
       const n = ENEMIES[enemy.type].boss ? 22 : 10;
       for (let i = 0; i < n; i++) this.particles.push({ x: enemy.x, y: enemy.y, vx: (Math.random() - .5) * 150, vy: (Math.random() - .5) * 150, color: ENEMIES[enemy.type].color, life: .65 });
       if (ENEMIES[enemy.type].boss) { this.shake = .35; this.rings.push({ x: enemy.x, y: enemy.y, r: 10, maxR: 120, color: ENEMIES[enemy.type].color, life: .8, width: 5 }); }
+      if(enemy.type==="bacteria"&&enemy.splitDepth===0){
+        for(const offset of [-11,11])this.enemies.push({
+          ...enemy,id:++this.enemyId,hp:enemy.maxHp*.28,maxHp:enemy.maxHp*.28,x:enemy.x+offset,y:enemy.y+offset*.25,
+          dead:0,splitDepth:1,dodged:true,speed:enemy.speed*1.12,
+        });
+      }
     }
   }
 
@@ -496,9 +528,10 @@ export class DefenseEngine {
   private getSynergyNames() {
     const found=new Set<string>();
     for(const tower of this.towers){
+      if(tower.type==="stem")continue;
       const family=CELL_TOWERS[tower.type].family,p=TOWER_SLOTS[tower.slot];
       for(const other of this.towers){
-        if(other.id===tower.id||Math.hypot(TOWER_SLOTS[other.slot].x-p.x,TOWER_SLOTS[other.slot].y-p.y)>=185)continue;
+        if(other.id===tower.id||other.type==="stem"||Math.hypot(TOWER_SLOTS[other.slot].x-p.x,TOWER_SLOTS[other.slot].y-p.y)>=185)continue;
         const pair=[family,CELL_TOWERS[other.type].family].sort().join("-");
         if(pair==="heart-lung")found.add("심폐 순환 · 공속↑");
         if(pair==="liver-lung")found.add("전신 정화 · 피해↑");
@@ -524,7 +557,12 @@ export class DefenseEngine {
       countdown: Math.max(0, this.countdown), kills: this.kills, combo: this.combo, bestCombo: this.bestCombo,
       speed: this.speed, targetMode: this.targetMode, selected: this.selected, organs: structuredClone(this.organs),
       abilities, physiology: { oxygen, toxin, pulse, strain: { ...this.strain } },
-      towers: this.towers.map(({id,type,slot,level,branch})=>({id,type,slot,level,branch})),
+      towers: this.towers.map(({id,type,slot,level})=>({
+        id,type,slot,level,affinity:TOWER_SLOTS[slot].affinity,
+        canEvolve:level<3&&this.nutrients>=(level===1
+          ?GAME_BALANCE.differentiationCost
+          :TOWER_SLOTS[slot].affinity===type?GAME_BALANCE.specializationCost:Math.round(GAME_BALANCE.specializationCost*1.35)),
+      })),
       selectedSlot:this.selectedSlot, synergies:this.getSynergyNames(),
       cards: this.cards, message: this.message, clock: w.clock, flavor: w.flavor,
     });
@@ -558,26 +596,38 @@ export class DefenseEngine {
   private drawTowerSlots(c:CanvasRenderingContext2D){
     for(let i=0;i<TOWER_SLOTS.length;i++){
       const p=TOWER_SLOTS[i],tower=this.towers.find((t)=>t.slot===i),selected=this.selectedSlot===i;
+      const affinityColor=ORGANS[p.affinity].color;
+      c.beginPath();c.arc(p.x,p.y,34,0,Math.PI*2);c.fillStyle=`${affinityColor}16`;c.fill();
       c.beginPath();c.arc(p.x,p.y,selected?31:27,0,Math.PI*2);c.fillStyle=tower?"rgba(8,13,13,.72)":"rgba(255,255,255,.07)";c.fill();
-      c.setLineDash(tower?[]:[5,5]);c.strokeStyle=selected?"#d8ff3e":tower?CELL_TOWERS[tower.type].color:"rgba(255,220,225,.42)";c.lineWidth=selected?3:1.5;c.stroke();c.setLineDash([]);
+      c.setLineDash(tower?[]:[5,5]);c.strokeStyle=selected?"#d8ff3e":tower?CELL_TOWERS[tower.type].color:affinityColor;c.lineWidth=selected?3:1.5;c.stroke();c.setLineDash([]);
       if(!tower){c.fillStyle=selected?"#d8ff3e":"rgba(255,255,255,.55)";c.font="900 24px sans-serif";c.textAlign="center";c.fillText("+",p.x,p.y+8);c.textAlign="start";continue}
       this.drawTowerSprite(c,tower,p);
       c.fillStyle="#fff";c.font="900 8px sans-serif";c.textAlign="center";c.fillText(`LV${tower.level}`,p.x,p.y+38);c.textAlign="start";
+      const evolveCost=tower.level===1?GAME_BALANCE.differentiationCost:
+        p.affinity===tower.type?GAME_BALANCE.specializationCost:Math.round(GAME_BALANCE.specializationCost*1.35);
+      if(tower.level<3&&this.nutrients>=evolveCost){
+        const bob=Math.sin(this.elapsed*5)*3;
+        c.beginPath();c.arc(p.x,p.y-43+bob,12,0,Math.PI*2);c.fillStyle="#d8ff3e";c.fill();c.strokeStyle="#101515";c.lineWidth=2;c.stroke();
+        c.fillStyle="#101515";c.font="900 15px sans-serif";c.textAlign="center";c.fillText("↑",p.x,p.y-38+bob);c.textAlign="start";
+      }
     }
     for(const tower of this.towers){
       const p=TOWER_SLOTS[tower.slot],config=CELL_TOWERS[tower.type];
       for(const other of this.towers){
         if(other.id<=tower.id)continue;const op=TOWER_SLOTS[other.slot],oc=CELL_TOWERS[other.type];
-        if(config.family!==oc.family&&Math.hypot(op.x-p.x,op.y-p.y)<185){c.strokeStyle="rgba(216,255,62,.28)";c.lineWidth=2;c.setLineDash([3,6]);c.beginPath();c.moveTo(p.x,p.y);c.lineTo(op.x,op.y);c.stroke();c.setLineDash([])}
+        if(tower.type!=="stem"&&other.type!=="stem"&&config.family!==oc.family&&Math.hypot(op.x-p.x,op.y-p.y)<185){c.strokeStyle="rgba(216,255,62,.28)";c.lineWidth=2;c.setLineDash([3,6]);c.beginPath();c.moveTo(p.x,p.y);c.lineTo(op.x,op.y);c.stroke();c.setLineDash([])}
       }
     }
   }
   private drawTowerSprite(c:CanvasRenderingContext2D,tower:PlacedTower,p:Point){
-    if(!this.guardianSprites.complete||!this.guardianSprites.naturalWidth)return;
-    const family=CELL_TOWERS[tower.type].family,row=family==="lung"?0:family==="liver"?1:2;
-    let frame=Math.floor(this.elapsed*2)%2;
-    if(tower.attackAnim>.28)frame=2;else if(tower.attackAnim>0)frame=3;
-    c.save();c.shadowColor=CELL_TOWERS[tower.type].color;c.shadowBlur=10;c.drawImage(this.guardianSprites,frame*362,row*362,362,362,p.x-35,p.y-43,70,70);c.restore();
+    const key=tower.level===1?"undifferentiated":`${tower.type}-${tower.level}`;
+    const image=this.cellImages[key];
+    if(!image?.complete||!image.naturalWidth)return;
+    const bounce=Math.sin(this.elapsed*3+tower.id)*1.5;
+    const attack=tower.attackAnim>0?1.08:1;
+    const size=tower.level===1?58:tower.level===2?66:76;
+    c.save();c.translate(p.x,p.y+bounce);c.scale(attack,attack);c.shadowColor=CELL_TOWERS[tower.type].color;c.shadowBlur=12;
+    c.drawImage(image,-size/2,-size*.62,size,size);c.restore();
   }
   private drawBody(c: CanvasRenderingContext2D) {
     const tissue = c.createRadialGradient(500, 270, 40, 500, 300, 650);
@@ -684,22 +734,22 @@ export class DefenseEngine {
     c.strokeStyle="rgba(255,225,228,.65)";c.lineWidth=2;c.beginPath();c.moveTo(-18,-12);c.bezierCurveTo(-6,-3,-10,10,6,20);c.stroke();
   }
   private drawEnemy(c: CanvasRenderingContext2D, e: Enemy) {
-    const config = ENEMIES[e.type], boss = !!config.boss, size = boss ? 31 : 20;
+    const config = ENEMIES[e.type], boss = !!config.boss;
+    const size = boss ? 82 : e.type==="fat" ? 64 : e.type==="dust" ? 56 : e.type==="toxin" ? 52 : e.type==="virus" ? 42 : e.splitDepth ? 30 : 48;
     c.save(); c.translate(e.x, e.y);
     // 상태이상 링
     if (e.slow > 0) { c.strokeStyle = "rgba(120,235,255,.85)"; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, size + 8, 0, Math.PI * 2); c.stroke(); }
     if (e.poison > 0) { c.strokeStyle = `rgba(200,255,67,${.5 + Math.sin(this.elapsed * 10) * .3})`; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, size + 4, 0, Math.PI * 2); c.stroke(); }
-    c.rotate(Math.sin(this.elapsed * 2 + e.id) * .15); c.scale(e.hit ? 1.25 : 1, e.hit ? .8 : 1);
-    c.strokeStyle=e.hit?"#fff":config.color;c.lineWidth=boss?6:3;
-    const spikes=boss?14:e.type==="dust"?10:e.type==="caffeine"?6:8;
-    c.beginPath();for(let i=0;i<spikes*2;i++){const a=i/(spikes*2)*Math.PI*2,r=i%2?size:size*1.38;const x=Math.cos(a)*r,y=Math.sin(a)*r;i?c.lineTo(x,y):c.moveTo(x,y)}c.closePath();
-    c.fillStyle=e.hit?"#fff":config.color;c.shadowColor=config.color;c.shadowBlur=boss?22:8;c.fill();c.stroke();c.shadowBlur=0;
-    c.fillStyle="#251424";c.beginPath();c.arc(-6,-2,boss?5:3,0,Math.PI*2);c.arc(6,-2,boss?5:3,0,Math.PI*2);c.fill();
-    if(e.type==="alcohol"){c.strokeStyle="#fff1ba";c.lineWidth=3;c.beginPath();c.moveTo(-8,9);c.lineTo(8,9);c.stroke()}
-    else {c.strokeStyle="#251424";c.lineWidth=2;c.beginPath();c.arc(0,7,7,0,Math.PI);c.stroke()}
-    c.fillStyle = "#161823"; c.fillRect(-size, -size - 12, size * 2, 5);
+    c.rotate(Math.sin(this.elapsed * (e.type==="virus"?7:2) + e.id) * .08);
+    c.scale(e.hit ? 1.14 : 1, e.hit ? .88 : 1);
+    const image=this.enemyImages[e.type];
+    if(image?.complete&&image.naturalWidth){
+      c.shadowColor=config.color;c.shadowBlur=boss?24:9;c.globalAlpha=e.hit?.68:1;
+      c.drawImage(image,-size/2,-size*.56,size,size);c.globalAlpha=1;c.shadowBlur=0;
+    }else{c.fillStyle=config.color;c.beginPath();c.arc(0,0,size*.35,0,Math.PI*2);c.fill()}
+    c.fillStyle = "#161823"; c.fillRect(-size*.42, -size*.55 - 8, size * .84, 5);
     const hpFrac = Math.max(0, e.hp / e.maxHp);
-    c.fillStyle = boss ? "#ff4364" : hpFrac > .4 ? "#80e0a7" : "#f2c66d"; c.fillRect(-size, -size - 12, size * 2 * hpFrac, 5);
+    c.fillStyle = boss ? "#ff4364" : hpFrac > .4 ? "#80e0a7" : "#f2c66d"; c.fillRect(-size*.42, -size*.55 - 8, size * .84 * hpFrac, 5);
     c.restore(); c.textAlign = "start";
   }
 }
