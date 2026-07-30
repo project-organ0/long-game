@@ -3,6 +3,8 @@ export type EnemyType = "stress" | "dust" | "alcohol" | "sugar" | "caffeine" | "
 export type GamePhase = "prep" | "wave" | "cards" | "victory" | "defeat";
 export type AbilityId = "breath" | "detox" | "adrenaline";
 export type TargetMode = "first" | "last" | "strong";
+export type TowerType = "alveolus" | "oxygen" | "enzyme" | "kupffer" | "pulse" | "platelet";
+export type TowerBranch = "power" | "utility";
 
 export interface OrganConfig {
   id: OrganType; name: string; emoji: string; role: string; color: string;
@@ -36,6 +38,14 @@ export interface PhysiologyState {
   oxygen: number; toxin: number; pulse: number;
   strain: Record<OrganType, number>;
 }
+export interface TowerConfig {
+  id: TowerType; name: string; family: OrganType; role: string; cost: number;
+  damage: number; attackSpeed: number; range: number; color: string;
+  splash?: number; bonusAgainst?: EnemyType; bonusMultiplier?: number;
+}
+export interface PlacedTowerState {
+  id: number; type: TowerType; slot: number; level: number; branch?: TowerBranch;
+}
 export interface HudState {
   phase: GamePhase; wave: number; totalWaves: number; life: number; maxLife: number;
   nutrients: number; elapsed: number; remaining: number; countdown: number; kills: number;
@@ -43,5 +53,6 @@ export interface HudState {
   selected: OrganType; organs: Record<OrganType, OrganState>;
   abilities: Record<OrganType, AbilityState>;
   physiology: PhysiologyState;
+  towers: PlacedTowerState[]; selectedSlot: number | null; synergies: string[];
   cards: HabitCard[]; message: string; clock: string; flavor: string;
 }

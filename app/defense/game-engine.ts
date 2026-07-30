@@ -1,5 +1,5 @@
-import { ENEMIES, GAME_BALANCE, HABIT_CARDS, ORGANS, WAVES } from "./balance";
-import type { AbilityId, EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType, TargetMode } from "./types";
+import { CELL_TOWERS, ENEMIES, GAME_BALANCE, HABIT_CARDS, ORGANS, WAVES } from "./balance";
+import type { EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganState, OrganType, TargetMode, TowerBranch, TowerType } from "./types";
 
 type Point = { x: number; y: number };
 type Enemy = {
@@ -12,11 +12,16 @@ type Particle = { x: number; y: number; vx: number; vy: number; color: string; l
 type Tracer = { x: number; y: number; tx: number; ty: number; color: string; life: number };
 type Ring = { x: number; y: number; r: number; maxR: number; color: string; life: number; width: number };
 type Spawn = { type: EnemyType; at: number };
+type PlacedTower = { id: number; type: TowerType; slot: number; level: number; branch?: TowerBranch; cooldown: number; attackAnim: number };
 
 const PATH: Point[] = [{ x: -35, y: 130 }, { x: 170, y: 130 }, { x: 250, y: 280 }, { x: 475, y: 280 }, { x: 585, y: 450 }, { x: 790, y: 450 }, { x: 930, y: 310 }, { x: 1035, y: 310 }];
 const ORGAN_POS: Record<OrganType, Point> = { lung: { x: 220, y: 185 }, liver: { x: 515, y: 385 }, heart: { x: 790, y: 300 } };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const CORE: Point = { x: 945, y: 310 };
+const TOWER_SLOTS: Point[] = [
+  { x:105,y:68 },{ x:310,y:205 },{ x:360,y:355 },{ x:470,y:170 },
+  { x:620,y:350 },{ x:690,y:520 },{ x:840,y:400 },{ x:900,y:205 },
+];
 
 export class DefenseEngine {
   private ctx: CanvasRenderingContext2D;
@@ -41,6 +46,10 @@ export class DefenseEngine {
   private adrenaline = 0; // 남은 초
   private strain: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private overloadTick = 1;
+  private towers: PlacedTower[] = [];
+  private selectedSlot: number | null = 0;
+  private towerId = 0;
+  private guardianSprites = new Image();
   private next: NextWaveEffects = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
   private organCooldown: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private abilityCd: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
@@ -63,6 +72,7 @@ export class DefenseEngine {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas is not supported");
     this.ctx = ctx;
+    this.guardianSprites.src = "/art/cell-guardians-v1.png";
     canvas.addEventListener("pointerdown", this.onPointer);
     this.emit();
     this.raf = requestAnimationFrame(this.loop);
@@ -75,12 +85,48 @@ export class DefenseEngine {
 
   togglePause() { this.paused = !this.paused; this.message = this.paused ? "잠시 숨 고르는 중" : "방어 재개"; this.emit(); }
   isPaused() { return this.paused; }
-  selectOrgan(id: OrganType) { this.selected = id; this.emit(); }
+  selectOrgan(id: OrganType) { this.selected = id; this.selectedSlot = null; this.emit(); }
   setSpeed(mult: number) { this.speed = mult; this.emit(); }
   cycleTargetMode() {
     const order: TargetMode[] = ["first", "last", "strong"];
     this.targetMode = order[(order.indexOf(this.targetMode) + 1) % order.length];
     this.emit();
+  }
+
+  buildTower(type: TowerType) {
+    if (this.selectedSlot === null || this.towers.some((t) => t.slot === this.selectedSlot)) return false;
+    const config = CELL_TOWERS[type];
+    if (this.nutrients < config.cost) { this.message = "영양분이 부족합니다"; this.emit(); return false; }
+    this.nutrients -= config.cost;
+    this.towers.push({ id: ++this.towerId, type, slot: this.selectedSlot, level: 1, cooldown: .15, attackAnim: 0 });
+    const p = TOWER_SLOTS[this.selectedSlot];
+    this.rings.push({ x:p.x,y:p.y,r:8,maxR:54,color:config.color,life:.65,width:4 });
+    this.message = `${config.name} 배치 완료`;
+    this.emit(); return true;
+  }
+
+  upgradeTower(branch: TowerBranch) {
+    if (this.selectedSlot === null) return false;
+    const tower = this.towers.find((t) => t.slot === this.selectedSlot);
+    if (!tower || tower.level >= 3) return false;
+    const cost = 35 + tower.level * 35;
+    if (this.nutrients < cost) { this.message = "영양분이 부족합니다"; this.emit(); return false; }
+    this.nutrients -= cost; tower.level++; tower.branch ??= branch;
+    const p=TOWER_SLOTS[tower.slot], color=CELL_TOWERS[tower.type].color;
+    this.rings.push({x:p.x,y:p.y,r:8,maxR:70,color,life:.7,width:5});
+    this.message=`${CELL_TOWERS[tower.type].name} · ${tower.branch==="power"?"공격 분화":"기능 분화"} Lv.${tower.level}`;
+    this.emit(); return true;
+  }
+
+  sellTower() {
+    if (this.selectedSlot === null) return false;
+    const index = this.towers.findIndex((t) => t.slot === this.selectedSlot);
+    if (index < 0) return false;
+    const tower=this.towers[index], base=CELL_TOWERS[tower.type];
+    let invested=base.cost;
+    for(let level=1;level<tower.level;level++) invested+=35+level*35;
+    this.nutrients += Math.round(invested*.7);
+    this.towers.splice(index,1); this.message=`${base.name} 회수`; this.emit(); return true;
   }
 
   startWaveNow() {
@@ -177,9 +223,13 @@ export class DefenseEngine {
     const rect = this.canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * 1000 / rect.width;
     const y = (event.clientY - rect.top) * 600 / rect.height;
+    for (let i=0;i<TOWER_SLOTS.length;i++) {
+      const p=TOWER_SLOTS[i];
+      if (Math.hypot(x-p.x,y-p.y)<38) { this.selectedSlot=i; this.emit(); return; }
+    }
     for (const id of TYPES) {
       const p = ORGAN_POS[id];
-      if (Math.hypot(x - p.x, y - p.y) < 52) { this.selected = id; this.emit(); break; }
+      if (Math.hypot(x - p.x, y - p.y) < 52) { this.selected = id; this.selectedSlot = null; this.emit(); break; }
     }
   };
 
@@ -205,6 +255,7 @@ export class DefenseEngine {
     this.shake = Math.max(0, this.shake - dt);
     this.adrenaline = Math.max(0, this.adrenaline - dt);
     for (const t of TYPES) this.abilityCd[t] = Math.max(0, this.abilityCd[t] - dt);
+    for (const tower of this.towers) tower.attackAnim = Math.max(0, tower.attackAnim - dt);
     if (this.combo > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
 
     if (this.phase === "prep") {
@@ -216,6 +267,7 @@ export class DefenseEngine {
       this.moveEnemies(dt);
       this.applyStatuses(dt);
       this.updatePhysiology(dt);
+      this.attackTowers(dt);
       this.attack(dt);
       this.moveProjectiles(dt);
       if (!this.queue.length && !this.enemies.length) this.finishWave();
@@ -335,6 +387,43 @@ export class DefenseEngine {
     return list.reduce((a, b) => (this.progress(b) > this.progress(a) ? b : a));
   }
 
+  private towerSynergy(tower: PlacedTower) {
+    const config=CELL_TOWERS[tower.type], p=TOWER_SLOTS[tower.slot];
+    const neighbors=this.towers.filter((other)=>other.id!==tower.id&&Math.hypot(TOWER_SLOTS[other.slot].x-p.x,TOWER_SLOTS[other.slot].y-p.y)<185);
+    const families=new Set(neighbors.map((t)=>CELL_TOWERS[t.type].family));
+    return {
+      speed: families.has("heart")&&config.family!=="heart" ? 1.25 : 1,
+      damage: families.has("liver")&&config.family==="lung" ? 1.2 : 1,
+      control: families.has("lung")&&config.family==="heart",
+    };
+  }
+
+  private attackTowers(dt:number) {
+    for (const tower of this.towers) {
+      tower.cooldown-=dt; if(tower.cooldown>0)continue;
+      const config=CELL_TOWERS[tower.type], p=TOWER_SLOTS[tower.slot], synergy=this.towerSynergy(tower);
+      const levelMult=1+(tower.level-1)*.45;
+      const range=config.range*(1+(tower.level-1)*.08)*(tower.branch==="utility"?1.18:1);
+      const list=this.enemies.filter((e)=>Math.hypot(e.x-p.x,e.y-p.y)<=range);
+      if(!list.length)continue;
+      const target=this.pickTarget(list);
+      let damage=config.damage*levelMult*synergy.damage*(tower.branch==="power"?1.35:1);
+      if(config.bonusAgainst===target.type)damage*=config.bonusMultiplier??1;
+      const victims=config.splash?this.enemies.filter((e)=>Math.hypot(e.x-target.x,e.y-target.y)<=config.splash!):[target];
+      for(const victim of victims){
+        this.damageEnemy(victim,damage*(victim===target?1:.58),config.color);
+        if(tower.type==="oxygen")victim.slow=Math.max(victim.slow,tower.branch==="utility"?2.5:1.2);
+        if(tower.type==="enzyme"){victim.poison=Math.max(victim.poison,2.5);victim.poisonDps=Math.max(victim.poisonDps,damage*.35)}
+        if(tower.type==="platelet"||synergy.control)victim.slow=Math.max(victim.slow,tower.branch==="utility"?2.2:.8);
+      }
+      this.tracers.push({x:p.x,y:p.y,tx:target.x,ty:target.y,color:config.color,life:.16});
+      if(config.splash)this.rings.push({x:target.x,y:target.y,r:5,maxR:config.splash,color:config.color,life:.3,width:2});
+      tower.attackAnim=.48;
+      tower.cooldown=1/(config.attackSpeed*synergy.speed*(tower.branch==="utility"?1.12:1));
+    }
+    this.enemies=this.enemies.filter((e)=>!e.dead);
+  }
+
   private attack(dt: number) {
     for (const id of TYPES) {
       const config = ORGANS[id], state = this.organs[id], p = ORGAN_POS[id];
@@ -404,6 +493,21 @@ export class DefenseEngine {
     this.emit();
   }
 
+  private getSynergyNames() {
+    const found=new Set<string>();
+    for(const tower of this.towers){
+      const family=CELL_TOWERS[tower.type].family,p=TOWER_SLOTS[tower.slot];
+      for(const other of this.towers){
+        if(other.id===tower.id||Math.hypot(TOWER_SLOTS[other.slot].x-p.x,TOWER_SLOTS[other.slot].y-p.y)>=185)continue;
+        const pair=[family,CELL_TOWERS[other.type].family].sort().join("-");
+        if(pair==="heart-lung")found.add("심폐 순환 · 공속↑");
+        if(pair==="liver-lung")found.add("전신 정화 · 피해↑");
+        if(pair==="heart-liver")found.add("응고 해독 · 제어↑");
+      }
+    }
+    return [...found];
+  }
+
   private emit() {
     const w = WAVES[Math.min(this.wave - 1, WAVES.length - 1)];
     const abilities = {} as HudState["abilities"];
@@ -420,6 +524,8 @@ export class DefenseEngine {
       countdown: Math.max(0, this.countdown), kills: this.kills, combo: this.combo, bestCombo: this.bestCombo,
       speed: this.speed, targetMode: this.targetMode, selected: this.selected, organs: structuredClone(this.organs),
       abilities, physiology: { oxygen, toxin, pulse, strain: { ...this.strain } },
+      towers: this.towers.map(({id,type,slot,level,branch})=>({id,type,slot,level,branch})),
+      selectedSlot:this.selectedSlot, synergies:this.getSynergyNames(),
       cards: this.cards, message: this.message, clock: w.clock, flavor: w.flavor,
     });
   }
@@ -432,6 +538,7 @@ export class DefenseEngine {
     if (this.shake > 0) c.translate((Math.random() - .5) * 10, (Math.random() - .5) * 10);
     this.drawBody(c);
     this.drawVessels(c);
+    this.drawTowerSlots(c);
     this.drawCore(c);
     this.drawOrgans(c);
     for (const t of this.tracers) { c.globalAlpha = Math.max(0, t.life / .12) * .8; c.strokeStyle = t.color; c.lineWidth = 2.5; c.beginPath(); c.moveTo(t.x, t.y); c.lineTo(t.tx, t.ty); c.stroke(); } c.globalAlpha = 1;
@@ -448,6 +555,30 @@ export class DefenseEngine {
   }
 
   private path(c: CanvasRenderingContext2D) { c.beginPath(); c.moveTo(PATH[0].x, PATH[0].y); for (let i = 1; i < PATH.length; i++) c.lineTo(PATH[i].x, PATH[i].y); }
+  private drawTowerSlots(c:CanvasRenderingContext2D){
+    for(let i=0;i<TOWER_SLOTS.length;i++){
+      const p=TOWER_SLOTS[i],tower=this.towers.find((t)=>t.slot===i),selected=this.selectedSlot===i;
+      c.beginPath();c.arc(p.x,p.y,selected?31:27,0,Math.PI*2);c.fillStyle=tower?"rgba(8,13,13,.72)":"rgba(255,255,255,.07)";c.fill();
+      c.setLineDash(tower?[]:[5,5]);c.strokeStyle=selected?"#d8ff3e":tower?CELL_TOWERS[tower.type].color:"rgba(255,220,225,.42)";c.lineWidth=selected?3:1.5;c.stroke();c.setLineDash([]);
+      if(!tower){c.fillStyle=selected?"#d8ff3e":"rgba(255,255,255,.55)";c.font="900 24px sans-serif";c.textAlign="center";c.fillText("+",p.x,p.y+8);c.textAlign="start";continue}
+      this.drawTowerSprite(c,tower,p);
+      c.fillStyle="#fff";c.font="900 8px sans-serif";c.textAlign="center";c.fillText(`LV${tower.level}`,p.x,p.y+38);c.textAlign="start";
+    }
+    for(const tower of this.towers){
+      const p=TOWER_SLOTS[tower.slot],config=CELL_TOWERS[tower.type];
+      for(const other of this.towers){
+        if(other.id<=tower.id)continue;const op=TOWER_SLOTS[other.slot],oc=CELL_TOWERS[other.type];
+        if(config.family!==oc.family&&Math.hypot(op.x-p.x,op.y-p.y)<185){c.strokeStyle="rgba(216,255,62,.28)";c.lineWidth=2;c.setLineDash([3,6]);c.beginPath();c.moveTo(p.x,p.y);c.lineTo(op.x,op.y);c.stroke();c.setLineDash([])}
+      }
+    }
+  }
+  private drawTowerSprite(c:CanvasRenderingContext2D,tower:PlacedTower,p:Point){
+    if(!this.guardianSprites.complete||!this.guardianSprites.naturalWidth)return;
+    const family=CELL_TOWERS[tower.type].family,row=family==="lung"?0:family==="liver"?1:2;
+    let frame=Math.floor(this.elapsed*2)%2;
+    if(tower.attackAnim>.28)frame=2;else if(tower.attackAnim>0)frame=3;
+    c.save();c.shadowColor=CELL_TOWERS[tower.type].color;c.shadowBlur=10;c.drawImage(this.guardianSprites,frame*362,row*362,362,362,p.x-35,p.y-43,70,70);c.restore();
+  }
   private drawBody(c: CanvasRenderingContext2D) {
     const tissue = c.createRadialGradient(500, 270, 40, 500, 300, 650);
     tissue.addColorStop(0, "#6f2036"); tissue.addColorStop(.52, "#401526"); tissue.addColorStop(1, "#1d0d19");

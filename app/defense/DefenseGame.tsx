@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { DefenseEngine } from "./game-engine";
-import { GAME_BALANCE, ORGANS, WAVES } from "./balance";
-import type { HudState, OrganType, TargetMode } from "./types";
+import { CELL_TOWERS, GAME_BALANCE, ORGANS, WAVES } from "./balance";
+import type { HudState, OrganType, TargetMode, TowerType } from "./types";
 
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const TARGET_LABEL: Record<TargetMode, string> = { first: "선두 우선", last: "후미 우선", strong: "최강 우선" };
@@ -20,6 +20,7 @@ const initialHud: HudState = {
     heart: { id: "adrenaline", cooldown: 0, ready: true, active: 0 },
   },
   physiology: { oxygen: 100, toxin: 0, pulse: 68, strain: { lung: 0, liver: 0, heart: 0 } },
+  towers: [], selectedSlot: 0, synergies: [],
   cards: [], message: "방어 준비", clock: WAVES[0].clock, flavor: WAVES[0].flavor,
 };
 
@@ -39,6 +40,8 @@ export default function DefenseGame() {
 
   const selected = ORGANS[hud.selected];
   const selectedState = hud.organs[hud.selected];
+  const selectedTower = hud.selectedSlot === null ? undefined : hud.towers.find((tower) => tower.slot === hud.selectedSlot);
+  const selectedTowerConfig = selectedTower ? CELL_TOWERS[selectedTower.type] : undefined;
   const maxLevel = GAME_BALANCE.maxOrganLevel;
   const stats = useMemo(() => ({
     damage: Math.round(selected.baseDamage * GAME_BALANCE.levelDamageMultiplier[selectedState.level - 1]),
@@ -149,6 +152,41 @@ export default function DefenseGame() {
         </section>
 
         <aside className="organ-panel">
+          {hud.selectedSlot !== null ? <div className="tower-panel">
+            <div className="tower-panel-head">
+              <small>배치 슬롯 {hud.selectedSlot + 1}</small>
+              <h2>{selectedTowerConfig ? selectedTowerConfig.name : "세포 타워 배치"}</h2>
+              <p>{selectedTowerConfig ? selectedTowerConfig.role : "혈관 주변 슬롯에 방어 세포를 배치하세요."}</p>
+            </div>
+            {!selectedTower ? <div className="tower-shop">
+              {(Object.keys(CELL_TOWERS) as TowerType[]).map((type) => {
+                const tower=CELL_TOWERS[type];
+                return <button key={type} onClick={()=>engineRef.current?.buildTower(type)} disabled={hud.nutrients<tower.cost} style={{"--tower":tower.color} as React.CSSProperties}>
+                  <span className={`tower-thumb tower-${tower.family}`} />
+                  <span><b>{tower.name}</b><small>{tower.role}</small></span><em>● {tower.cost}</em>
+                </button>;
+              })}
+            </div> : <>
+              <div className={`tower-portrait tower-${selectedTowerConfig!.family}`}><span>LV {selectedTower.level}</span></div>
+              <div className="tower-stats">
+                <p><span>공격력</span><b>{Math.round(selectedTowerConfig!.damage*(1+(selectedTower.level-1)*.45))}</b></p>
+                <p><span>공격속도</span><b>{selectedTowerConfig!.attackSpeed}<small>/초</small></b></p>
+                <p><span>사거리</span><b>{selectedTowerConfig!.range}</b></p>
+              </div>
+              {selectedTower.level<3 && <div className="branch-actions">
+                {!selectedTower.branch && <small>성장 방향 선택</small>}
+                {(!selectedTower.branch || selectedTower.branch==="power") && <button disabled={hud.nutrients<35+selectedTower.level*35} onClick={()=>engineRef.current?.upgradeTower("power")}><b>공격 분화</b><span>피해량 +35%</span><em>● {35+selectedTower.level*35}</em></button>}
+                {(!selectedTower.branch || selectedTower.branch==="utility") && <button disabled={hud.nutrients<35+selectedTower.level*35} onClick={()=>engineRef.current?.upgradeTower("utility")}><b>기능 분화</b><span>사거리·특수효과 강화</span><em>● {35+selectedTower.level*35}</em></button>}
+              </div>}
+              {selectedTower.level>=3 && <p className="tower-max">MAX · 분화 완료</p>}
+              <button className="sell-tower" onClick={()=>engineRef.current?.sellTower()}>타워 회수 · 70% 환급</button>
+            </>}
+            <div className="synergy-box">
+              <small>활성 조합</small>
+              {hud.synergies.length ? hud.synergies.map((name)=><b key={name}>✦ {name}</b>) : <p>서로 다른 장기 계열을 가까이 배치하세요.</p>}
+            </div>
+            <button className="back-organ" onClick={()=>select(hud.selected)}>← 장기 본부 보기</button>
+          </div> : <>
           <div className="panel-heading"><span className={`organ-avatar avatar-${hud.selected}`} style={{ backgroundColor: selected.color }} /><div><small>선택 장기 수호자</small><h2>{selected.name} <i>LV {selectedState.level}</i></h2></div></div>
           <p className="role">{selected.role}</p>
           <div className={`strain-meter ${hud.physiology.strain[hud.selected] > 70 ? "danger" : ""}`}>
@@ -173,6 +211,7 @@ export default function DefenseGame() {
               <p><b>{wave.label}</b><small>{wave.wave === WAVES.length ? "FINAL" : `${wave.groups.reduce((n, g) => n + g.count, 0)}기`}</small></p>
             </div>)}
           </div>
+          </>}
         </aside>
       </div>
 

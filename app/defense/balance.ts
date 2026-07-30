@@ -1,4 +1,4 @@
-import type { EnemyConfig, EnemyType, HabitCard, OrganConfig, OrganType, WaveConfig } from "./types";
+import type { EnemyConfig, EnemyType, HabitCard, OrganConfig, OrganType, TowerConfig, TowerType, WaveConfig } from "./types";
 
 export const GAME_BALANCE = {
   initialLife: 12,
@@ -50,6 +50,15 @@ export const ENEMIES: Record<EnemyType, EnemyConfig> = {
   caffeine: { id: "caffeine", name: "카페인",   glyph: "☕", color: "#c9a06a", maxHp: 26,  speed: 108,reward: 14, lifeDamage: 1 },
   fatigue:  { id: "fatigue",  name: "만성피로", glyph: "☾", color: "#6f7bd6", maxHp: 460, speed: 30, reward: 120,lifeDamage: 3, regen: 14, boss: true },
   overwork: { id: "overwork", name: "과로",     glyph: "☠", color: "#ff4364", maxHp: 900, speed: 28, reward: 320,lifeDamage: 5, sprint: true, boss: true },
+};
+
+export const CELL_TOWERS: Record<TowerType, TowerConfig> = {
+  alveolus: { id:"alveolus", name:"폐포 정화기", family:"lung", role:"먼지 특화 광역", cost:40, damage:12, attackSpeed:1.05, range:145, splash:52, bonusAgainst:"dust", bonusMultiplier:2, color:"#6dd6d0" },
+  oxygen: { id:"oxygen", name:"산소 분사기", family:"lung", role:"저지·감속", cost:35, damage:7, attackSpeed:1.4, range:135, color:"#9ef4ef" },
+  enzyme: { id:"enzyme", name:"해독 효소", family:"liver", role:"지속 독성 피해", cost:45, damage:17, attackSpeed:.75, range:155, color:"#c8ff43" },
+  kupffer: { id:"kupffer", name:"쿠퍼세포", family:"liver", role:"알코올 포획", cost:50, damage:28, attackSpeed:.55, range:148, bonusAgainst:"alcohol", bonusMultiplier:2.3, color:"#e9a85d" },
+  pulse: { id:"pulse", name:"맥박 노드", family:"heart", role:"초고속 단일", cost:40, damage:9, attackSpeed:1.9, range:140, color:"#ff647c" },
+  platelet: { id:"platelet", name:"혈소판 장벽", family:"heart", role:"응고·기절", cost:45, damage:6, attackSpeed:.8, range:125, splash:38, color:"#ff9aaa" },
 };
 
 // 웨이브 = 하루의 시간대. 각 시간대의 위협 조합이 테마와 맞물린다.
