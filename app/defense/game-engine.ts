@@ -3,10 +3,11 @@ import type { EnemyType, GamePhase, HabitCard, HudState, NextWaveEffects, OrganS
 
 type Point = { x: number; y: number };
 type CellSlot = Point & { affinity: OrganType };
+type RouteType = "lung" | "liver" | "heart";
 type Enemy = {
   id: number; type: EnemyType; hp: number; maxHp: number; speed: number; path: number; x: number; y: number;
   hit: number; dead: number; slow: number; poison: number; poisonDps: number; regenClock: number;
-  dodged: boolean; splitDepth: number;
+  dodged: boolean; splitDepth: number; route: RouteType;
 };
 type Projectile = { x: number; y: number; tx: number; ty: number; target: number; organ: OrganType; damage: number; color: string; splash: number; life: number };
 type Floater = { x: number; y: number; text: string; color: string; life: number; size: number };
@@ -16,14 +17,22 @@ type Ring = { x: number; y: number; r: number; maxR: number; color: string; life
 type Spawn = { type: EnemyType; at: number };
 type PlacedTower = { id: number; type: TowerType; slot: number; level: number; cooldown: number; attackAnim: number };
 
-const PATH: Point[] = [{ x: -35, y: 130 }, { x: 170, y: 130 }, { x: 250, y: 280 }, { x: 475, y: 280 }, { x: 585, y: 450 }, { x: 790, y: 450 }, { x: 930, y: 310 }, { x: 1035, y: 310 }];
-const ORGAN_POS: Record<OrganType, Point> = { lung: { x: 220, y: 185 }, liver: { x: 515, y: 385 }, heart: { x: 790, y: 300 } };
+const PATHS: Record<RouteType, Point[]> = {
+  lung:[{x:-35,y:105},{x:130,y:105},{x:235,y:155},{x:365,y:125},{x:500,y:180},{x:640,y:225},{x:770,y:270},{x:875,y:300},{x:1035,y:300}],
+  liver:[{x:-35,y:505},{x:135,y:505},{x:245,y:450},{x:375,y:485},{x:510,y:420},{x:640,y:375},{x:770,y:330},{x:875,y:300},{x:1035,y:300}],
+  heart:[{x:-35,y:105},{x:130,y:105},{x:220,y:225},{x:355,y:285},{x:510,y:300},{x:675,y:300},{x:810,y:300},{x:1035,y:300}],
+};
+const ORGAN_POS: Record<OrganType, Point> = { lung:{x:145,y:245}, liver:{x:340,y:400}, heart:{x:755,y:410} };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const CORE: Point = { x: 945, y: 310 };
 const TOWER_SLOTS: CellSlot[] = [
-  { x:105,y:68,affinity:"lung" },{ x:310,y:205,affinity:"lung" },
-  { x:360,y:355,affinity:"liver" },{ x:470,y:170,affinity:"liver" },{ x:620,y:350,affinity:"liver" },
-  { x:690,y:520,affinity:"heart" },{ x:840,y:400,affinity:"heart" },{ x:900,y:205,affinity:"heart" },
+  {x:70,y:55,affinity:"lung"},{x:185,y:62,affinity:"lung"},{x:290,y:95,affinity:"lung"},
+  {x:410,y:80,affinity:"lung"},{x:525,y:130,affinity:"lung"},{x:635,y:170,affinity:"lung"},
+  {x:78,y:550,affinity:"liver"},{x:190,y:545,affinity:"liver"},{x:295,y:515,affinity:"liver"},
+  {x:415,y:535,affinity:"liver"},{x:525,y:470,affinity:"liver"},{x:635,y:420,affinity:"liver"},
+  {x:270,y:245,affinity:"heart"},{x:390,y:250,affinity:"heart"},{x:510,y:255,affinity:"heart"},
+  {x:620,y:280,affinity:"heart"},{x:720,y:245,affinity:"heart"},{x:810,y:350,affinity:"heart"},
+  {x:735,y:505,affinity:"heart"},{x:870,y:235,affinity:"heart"},
 ];
 
 export class DefenseEngine {
@@ -284,7 +293,6 @@ export class DefenseEngine {
       this.applyStatuses(dt);
       this.updatePhysiology(dt);
       this.attackTowers(dt);
-      this.attack(dt);
       this.moveProjectiles(dt);
       if (!this.queue.length && !this.enemies.length) this.finishWave();
     }
@@ -317,16 +325,19 @@ export class DefenseEngine {
     const base = ENEMIES[type];
     const scale = base.boss ? 1 + (this.wave - 1) * .05 : 1 + (this.wave - 1) * .12;
     const hp = base.maxHp * scale;
+    const route:RouteType=type==="dust"||type==="bacteria"?"lung":type==="toxin"||type==="fat"?"liver":"heart";
+    const start=PATHS[route][0];
     this.enemies.push({
       id: ++this.enemyId, type, hp, maxHp: hp,
       speed: base.speed * (1 + (this.wave - 1) * .02) * this.next.enemySpeed,
-      path: 0, x: PATH[0].x, y: PATH[0].y, hit: 0, dead: 0, slow: 0, poison: 0, poisonDps: 0, regenClock: 0,
-      dodged:false, splitDepth:0,
+      path:0,x:start.x,y:start.y,hit:0,dead:0,slow:0,poison:0,poisonDps:0,regenClock:0,
+      dodged:false,splitDepth:0,route,
     });
   }
 
   private moveEnemies(dt: number) {
     for (const enemy of this.enemies) {
+      const route=PATHS[enemy.route];
       enemy.hit = Math.max(0, enemy.hit - dt);
       enemy.slow = Math.max(0, enemy.slow - dt);
       const base = ENEMIES[enemy.type];
@@ -334,12 +345,12 @@ export class DefenseEngine {
       const sprintFactor = base.sprint && Math.sin(this.elapsed * 1.7) > .72 ? 1.7 : 1;
       const flowFactor = this.adrenaline > 0 ? .48 : 1;
       let move = enemy.speed * dt * slowFactor * sprintFactor * flowFactor;
-      while (move > 0 && enemy.path < PATH.length - 1) {
-        const target = PATH[enemy.path + 1], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
+      while (move > 0 && enemy.path < route.length - 1) {
+        const target = route[enemy.path + 1], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
         if (move >= dist) { enemy.x = target.x; enemy.y = target.y; enemy.path++; move -= dist; }
         else { enemy.x += dx / dist * move; enemy.y += dy / dist * move; move = 0; }
       }
-      if (enemy.path >= PATH.length - 1) {
+      if (enemy.path >= route.length - 1) {
         this.life = Math.max(0, this.life - base.lifeDamage);
         enemy.dead = 1; this.flash = .35; this.shake = .3; this.combo = 0;
         this.floaters.push({ x: CORE.x - 30, y: CORE.y - 40, text: `-${base.lifeDamage} 생명`, color: "#ff4364", life: 1, size: 16 });
@@ -393,8 +404,8 @@ export class DefenseEngine {
   }
 
   private progress(e: Enemy): number {
-    const next = PATH[Math.min(e.path + 1, PATH.length - 1)];
-    return e.path * 10000 - Math.hypot(next.x - e.x, next.y - e.y);
+    const route=PATHS[e.route],next=route[Math.min(e.path+1,route.length-1)];
+    return e.path*10000-Math.hypot(next.x-e.x,next.y-e.y);
   }
 
   private pickTarget(list: Enemy[]): Enemy {
@@ -419,11 +430,14 @@ export class DefenseEngine {
       tower.cooldown-=dt; if(tower.cooldown>0)continue;
       const config=CELL_TOWERS[tower.type], p=TOWER_SLOTS[tower.slot], synergy=this.towerSynergy(tower);
       const levelMult=1+(tower.level-1)*.45;
+      const family=tower.type==="stem"?null:config.family;
+      const headquarters=family&&Math.hypot(p.x-ORGAN_POS[family].x,p.y-ORGAN_POS[family].y)<225
+        ?1+this.organs[family].level*.08:1;
       const range=config.range*(1+(tower.level-1)*.08);
       const list=this.enemies.filter((e)=>Math.hypot(e.x-p.x,e.y-p.y)<=range);
       if(!list.length)continue;
       const target=this.pickTarget(list);
-      let damage=config.damage*levelMult*synergy.damage;
+      let damage=config.damage*levelMult*synergy.damage*headquarters;
       if(config.bonusAgainst===target.type)damage*=config.bonusMultiplier??1;
       const victims=config.splash?this.enemies.filter((e)=>Math.hypot(e.x-target.x,e.y-target.y)<=config.splash!):[target];
       for(const victim of victims){
@@ -592,7 +606,7 @@ export class DefenseEngine {
     c.restore();
   }
 
-  private path(c: CanvasRenderingContext2D) { c.beginPath(); c.moveTo(PATH[0].x, PATH[0].y); for (let i = 1; i < PATH.length; i++) c.lineTo(PATH[i].x, PATH[i].y); }
+  private path(c:CanvasRenderingContext2D,points:Point[]){c.beginPath();c.moveTo(points[0].x,points[0].y);for(let i=1;i<points.length;i++)c.lineTo(points[i].x,points[i].y)}
   private drawTowerSlots(c:CanvasRenderingContext2D){
     for(let i=0;i<TOWER_SLOTS.length;i++){
       const p=TOWER_SLOTS[i],tower=this.towers.find((t)=>t.slot===i),selected=this.selectedSlot===i;
@@ -644,37 +658,30 @@ export class DefenseEngine {
     const vignette = c.createRadialGradient(500, 300, 250, 500, 300, 650);
     vignette.addColorStop(0, "transparent"); vignette.addColorStop(1, "rgba(6,2,9,.72)");
     c.fillStyle = vignette; c.fillRect(0, 0, 1000, 600);
+    const zones=[
+      {x:235,y:115,r:245,color:"rgba(78,229,225,.12)"},
+      {x:300,y:500,r:245,color:"rgba(233,168,93,.13)"},
+      {x:720,y:300,r:255,color:"rgba(255,100,124,.11)"},
+    ];
+    for(const z of zones){const g=c.createRadialGradient(z.x,z.y,25,z.x,z.y,z.r);g.addColorStop(0,z.color);g.addColorStop(1,"transparent");c.fillStyle=g;c.fillRect(z.x-z.r,z.y-z.r,z.r*2,z.r*2)}
     c.fillStyle = "rgba(255,214,217,.6)"; c.font = "800 10px sans-serif"; c.letterSpacing = "2px";
-    c.fillText("BODY INTERIOR · CIRCULATORY DEFENSE", 24, 28);
+    c.fillText("CELL DIFFERENTIATION MAP · TWO INFLOW ROUTES", 355, 28);
     c.letterSpacing = "0px";
   }
   private drawVessels(c: CanvasRenderingContext2D) {
     c.lineCap = "round"; c.lineJoin = "round";
-    const branches = [
-      { color: "#37668b", width: 13, points: [[300,280],[310,110],[420,28]] },
-      { color: "#37668b", width: 9, points: [[585,450],[650,550],[765,610]] },
-      { color: "#7d2d45", width: 11, points: [[475,280],[500,125],[600,35]] },
-      { color: "#37668b", width: 8, points: [[790,450],[865,525],[995,545]] },
-      { color: "#7d2d45", width: 7, points: [[170,130],[110,260],[20,300]] },
+    const routes:[RouteType,string,string][]=[
+      ["lung","#326f87","#8ee8e2"],["liver","#8a4e3b","#e8ae67"],["heart","#96314d","#ff8392"],
     ];
-    for (const branch of branches) {
-      c.beginPath(); c.moveTo(branch.points[0][0], branch.points[0][1]);
-      for (let i = 1; i < branch.points.length; i++) c.lineTo(branch.points[i][0], branch.points[i][1]);
-      c.strokeStyle = "rgba(5,3,10,.28)"; c.lineWidth = branch.width + 8; c.stroke();
-      c.strokeStyle = branch.color; c.lineWidth = branch.width; c.stroke();
-      c.strokeStyle = "rgba(255,255,255,.11)"; c.lineWidth = 1.5; c.stroke();
+    for(const [id,base,highlight] of routes){
+      const points=PATHS[id];this.path(c,points);c.strokeStyle="rgba(7,3,10,.48)";c.lineWidth=id==="heart"?38:50;c.stroke();
+      this.path(c,points);c.strokeStyle=base;c.lineWidth=id==="heart"?29:39;c.stroke();
+      this.path(c,points);c.strokeStyle=highlight;c.globalAlpha=.16;c.lineWidth=4;c.stroke();c.globalAlpha=1;
     }
-    c.strokeStyle = "rgba(8,3,11,.4)"; c.lineWidth = 58; this.path(c); c.stroke();
-    c.strokeStyle = "#932e49"; c.lineWidth = 44; this.path(c); c.stroke();
-    const blood = c.createLinearGradient(0, 0, 1000, 0); blood.addColorStop(0, "#ac3851"); blood.addColorStop(.55, "#7e2942"); blood.addColorStop(1, "#bd354f");
-    c.strokeStyle = blood; c.lineWidth = 30; this.path(c); c.stroke();
-    c.strokeStyle = "rgba(255,180,188,.24)"; c.lineWidth = 3; this.path(c); c.stroke();
-    for (let i = 0; i < 12; i++) {
-      const x = 42 + i * 82 + (this.elapsed * 18) % 82, y = 112 + Math.sin(i * 1.8) * 8;
-      if (x < 165) { c.beginPath(); c.ellipse(x, y, 7, 3.5, -.2, 0, Math.PI * 2); c.fillStyle = "rgba(255,160,170,.45)"; c.fill(); }
-    }
-    c.fillStyle = "#e99aa3"; c.font = "800 11px sans-serif"; c.fillText("외부 침입", 24, 91);
-    c.fillStyle = "#d78391"; c.font = "700 9px sans-serif"; c.fillText("기관지 혈관", 177, 245); c.fillText("간문맥", 475, 455); c.fillText("대동맥", 760, 405);
+    c.fillStyle="#9cebe6";c.font="900 10px sans-serif";c.fillText("상부 유입 · 세균 / 먼지 / 바이러스",18,88);
+    c.fillStyle="#edbd78";c.fillText("하부 유입 · 독소 / 지방",18,535);
+    c.fillStyle="#ff9aa7";c.fillText("합류 혈관",790,286);
+    for(let i=0;i<14;i++){const t=(this.elapsed*.09+i/14)%1,x=780+t*190,y=302+Math.sin(i)*4;c.beginPath();c.ellipse(x,y,7,3.5,-.1,0,Math.PI*2);c.fillStyle="rgba(255,183,192,.42)";c.fill()}
   }
   private drawCore(c: CanvasRenderingContext2D) {
     const beat = 1 + Math.sin(this.elapsed * 4) * .08;
@@ -691,7 +698,7 @@ export class DefenseEngine {
   }
   private drawOrgans(c: CanvasRenderingContext2D) {
     for (const id of TYPES) {
-      const config = ORGANS[id], p = ORGAN_POS[id], level = this.organs[id].level, selected = this.selected === id;
+      const config = ORGANS[id], p = ORGAN_POS[id], level = this.organs[id].level, selected = this.selectedSlot===null&&this.selected===id;
       const range = config.range * GAME_BALANCE.levelRangeMultiplier[level - 1];
       if (selected) { c.beginPath(); c.arc(p.x, p.y, range, 0, Math.PI * 2); c.fillStyle = `${config.color}12`; c.fill(); c.setLineDash([7, 8]); c.strokeStyle = `${config.color}70`; c.lineWidth = 2; c.stroke(); c.setLineDash([]); }
       // 스킬 준비 완료 표시 링
@@ -707,7 +714,7 @@ export class DefenseEngine {
       if (id === "liver") this.drawLiver(c);
       if (id === "heart") this.drawHeart(c);
       c.restore(); c.shadowBlur = 0;
-      c.fillStyle = "#fff"; c.font = "900 11px sans-serif"; c.textAlign = "center"; c.fillText(`${config.name} · LV ${level}`, p.x, p.y + 63); c.textAlign = "start";
+      c.fillStyle = "#fff"; c.font = "900 11px sans-serif"; c.textAlign = "center"; c.fillText(`${config.name} 본부 · LV ${level}`, p.x, p.y + 63); c.textAlign = "start";
     }
   }
   private drawLung(c: CanvasRenderingContext2D) {

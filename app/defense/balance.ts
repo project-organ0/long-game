@@ -26,19 +26,19 @@ export const GAME_BALANCE = {
 
 export const ORGANS: Record<OrganType, OrganConfig> = {
   lung: {
-    id: "lung", name: "폐", emoji: "🫁", role: "공기 파동 · 광역 요격", color: "#6dd6d0",
+    id: "lung", name: "폐", emoji: "🫁", role: "폐 구역 본부 · 주변 폐포 세포 강화", color: "#6dd6d0",
     baseDamage: 12, baseAttackSpeed: 0.95, range: 178, maxLevel: 5,
     bonusAgainst: "dust", bonusMultiplier: 1.7, splash: 64,
     ability: { id: "breath", name: "심호흡", icon: "🌬", description: "사거리 전체에 정화 폭발 · 3초간 적 이동 -55%", cooldown: 16, duration: 3 },
   },
   liver: {
-    id: "liver", name: "간", emoji: "🟤", role: "해독탄 · 알코올/당 특화", color: "#e9a85d",
+    id: "liver", name: "간", emoji: "🟤", role: "간문맥 본부 · 주변 간세포 강화", color: "#e9a85d",
     baseDamage: 30, baseAttackSpeed: 0.56, range: 188, maxLevel: 5,
     bonusAgainst: "toxin", bonusMultiplier: 1.9,
     ability: { id: "detox", name: "해독", icon: "🧪", description: "사거리 내 모든 적에게 5초간 강력한 독 도트", cooldown: 18, duration: 5 },
   },
   heart: {
-    id: "heart", name: "심장", emoji: "🫀", role: "맥박탄 · 초고속 단일", color: "#ff647c",
+    id: "heart", name: "심장", emoji: "🫀", role: "합류부 본부 · 주변 심장 세포 강화", color: "#ff647c",
     baseDamage: 11, baseAttackSpeed: 1.9, range: 172, maxLevel: 5,
     bonusAgainst: "virus", bonusMultiplier: 1.8,
     ability: { id: "adrenaline", name: "혈류 조절", icon: "💓", description: "5초간 전체 혈류를 52% 늦추고 심장 부담을 낮춤", cooldown: 20, duration: 5 },

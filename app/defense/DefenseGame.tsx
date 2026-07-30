@@ -209,9 +209,9 @@ export default function DefenseGame() {
             <p>{hud.physiology.strain[hud.selected] > 70 ? "과부하 · 공격 효율이 감소합니다" : "안정 · 정상적으로 방어 중"}</p>
           </div>
           <div className="stats">
-            <div><span>공격력</span><b>{stats.damage}</b></div>
-            <div><span>공격속도</span><b>{stats.speed}<small>/초</small></b></div>
-            <div><span>사거리</span><b>{stats.range}</b></div>
+            <div><span>스킬 위력</span><b>{stats.damage}</b></div>
+            <div><span>지원 효율</span><b>{stats.speed}<small>/초</small></b></div>
+            <div><span>영향 범위</span><b>{stats.range}</b></div>
           </div>
           <div className="special"><small>SPECIAL</small><p>{selected.bonusAgainst === "dust" ? "미세먼지 특화 · 주변 광역 정화" : selected.bonusAgainst === "toxin" ? "독소 특화 · 지속 해독 피해" : "바이러스 특화 · 초고속 응고 공격"}</p></div>
           <div className="ability-info"><small>액티브 · {selected.ability.name}</small><p>{selected.ability.description}</p></div>
