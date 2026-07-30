@@ -1,8 +1,8 @@
 import type { EnemyConfig, EnemyType, HabitCard, OrganConfig, OrganType, TowerConfig, TowerType, WaveConfig } from "./types";
 
 export const GAME_BALANCE = {
-  initialLife: 12,
-  maxLife: 12,
+  initialLife: 60,
+  maxLife: 60,
   initialNutrients: 120,
   stemCost: 25,
   differentiationCost: 45,
@@ -75,13 +75,13 @@ export const WAVES: WaveConfig[] = [
 
 export const HABIT_CARDS: HabitCard[] = [
   { id: "exercise", name: "운동", icon: "🏃", description: "모든 장기의 공격력 +12% (영구)", effectType: "permanent" },
-  { id: "sleep", name: "충분한 수면", icon: "🌙", description: "생명력 3 회복", effectType: "instant" },
+  { id: "sleep", name: "충분한 수면", icon: "🌙", description: "모든 장기 피로도 20 회복", effectType: "instant" },
   { id: "checkup", name: "건강검진", icon: "🩺", description: "가장 낮은 레벨 장기 무료 강화", drawback: "모두 최대면 영양분 +120", effectType: "instant" },
   { id: "vitamin", name: "영양제", icon: "💊", description: "액티브 스킬 쿨다운 즉시 초기화", effectType: "instant" },
   { id: "energy", name: "에너지 드링크", icon: "⚡", description: "다음 웨이브 공격속도 +35%", drawback: "웨이브 종료 후 해제", effectType: "nextWave" },
   { id: "snack", name: "야식", icon: "🍜", description: "영양분 즉시 +130", drawback: "다음 웨이브에 지방 3기 추가", effectType: "nextWave" },
-  { id: "allnight", name: "밤샘", icon: "🦉", description: "선택 장기 무료 강화", drawback: "생명력 -2", effectType: "choice" },
+  { id: "allnight", name: "밤샘", icon: "🦉", description: "선택 장기 무료 강화", drawback: "모든 장기 피로도 +10", effectType: "choice" },
   { id: "drinks", name: "술자리", icon: "🍻", description: "영양분 즉시 +180", drawback: "다음 웨이브에 독소 2기 추가", effectType: "nextWave" },
   { id: "meditation", name: "명상", icon: "🧘", description: "다음 웨이브 적 이동속도 -18%", effectType: "nextWave" },
-  { id: "walk", name: "산책", icon: "🚶", description: "생명력 1 회복 + 영양분 +60", effectType: "instant" },
+  { id: "walk", name: "산책", icon: "🚶", description: "모든 장기 피로도 8 회복 + 영양분 +60", effectType: "instant" },
 ];

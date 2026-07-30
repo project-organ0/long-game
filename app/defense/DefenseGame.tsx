@@ -92,7 +92,7 @@ export default function DefenseGame() {
 
       <section className="hud" aria-label="게임 상태">
         <div><small>시간대</small><strong className="clock">{hud.clock}<i>{hud.wave}/{hud.totalWaves}</i></strong></div>
-        <div><small>생명력</small><strong className="life">♥ {hud.life}<i>/{hud.maxLife}</i></strong></div>
+        <div className={hud.life < 15 ? "hud-danger" : ""}><small>침입 포화</small><strong className="life">● {hud.maxLife - hud.life}<i>/{hud.maxLife}</i></strong></div>
         <div><small>영양분</small><strong className="nutrient">● {hud.nutrients}</strong></div>
         <div className={hud.physiology.oxygen < 45 ? "hud-danger" : ""}><small>산소</small><strong className="oxygen">{Math.round(hud.physiology.oxygen)}<i>%</i></strong></div>
         <div className={hud.physiology.toxin > 65 ? "hud-danger" : ""}><small>독소</small><strong className="toxin">{Math.round(hud.physiology.toxin)}<i>%</i></strong></div>

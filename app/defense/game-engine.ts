@@ -17,14 +17,15 @@ type Ring = { x: number; y: number; r: number; maxR: number; color: string; life
 type Spawn = { type: EnemyType; at: number };
 type PlacedTower = { id: number; type: TowerType; slot: number; level: number; cooldown: number; attackAnim: number };
 
-const PATHS: Record<RouteType, Point[]> = {
-  lung:[{x:-35,y:105},{x:130,y:105},{x:235,y:155},{x:365,y:125},{x:500,y:180},{x:640,y:225},{x:770,y:270},{x:875,y:300},{x:1035,y:300}],
-  liver:[{x:-35,y:505},{x:135,y:505},{x:245,y:450},{x:375,y:485},{x:510,y:420},{x:640,y:375},{x:770,y:330},{x:875,y:300},{x:1035,y:300}],
-  heart:[{x:-35,y:105},{x:130,y:105},{x:220,y:225},{x:355,y:285},{x:510,y:300},{x:675,y:300},{x:810,y:300},{x:1035,y:300}],
-};
+const CIRCULATION:Point[]=[
+  {x:35,y:115},{x:205,y:95},{x:390,y:120},{x:570,y:170},{x:750,y:220},{x:910,y:300},
+  {x:790,y:385},{x:610,y:440},{x:420,y:490},{x:225,y:505},{x:65,y:435},{x:150,y:330},{x:65,y:225},
+];
+const rotatePath=(offset:number)=>[...CIRCULATION.slice(offset),...CIRCULATION.slice(0,offset)];
+const PATHS:Record<RouteType,Point[]>={lung:rotatePath(0),liver:rotatePath(9),heart:rotatePath(4)};
 const ORGAN_POS: Record<OrganType, Point> = { lung:{x:145,y:245}, liver:{x:340,y:400}, heart:{x:755,y:410} };
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
-const CORE: Point = { x: 945, y: 310 };
+const CORE: Point = { x: 505, y: 335 };
 const TOWER_SLOTS: CellSlot[] = [
   {x:70,y:55,affinity:"lung"},{x:185,y:62,affinity:"lung"},{x:290,y:95,affinity:"lung"},
   {x:410,y:80,affinity:"lung"},{x:525,y:130,affinity:"lung"},{x:635,y:170,affinity:"lung"},
@@ -75,6 +76,7 @@ export class DefenseEngine {
   private rings: Ring[] = [];
   private queue: Spawn[] = [];
   private spawnClock = 0;
+  private recirculationClock = 0;
   private enemyId = 0;
   private cards: HabitCard[] = [];
   private message = "방어 준비";
@@ -219,7 +221,7 @@ export class DefenseEngine {
   chooseCard(id: string) {
     if (this.phase !== "cards") return;
     if (id === "exercise") this.permanentDamage += GAME_BALANCE.damagePermanentStep;
-    if (id === "sleep") this.life = Math.min(GAME_BALANCE.maxLife, this.life + 3);
+    if (id === "sleep") for (const organ of TYPES) this.strain[organ] = Math.max(0, this.strain[organ] - 20);
     if (id === "checkup") {
       const min = Math.min(...TYPES.map((type) => this.organs[type].level));
       const target = TYPES.find((type) => this.organs[type].level === min && min < GAME_BALANCE.maxOrganLevel);
@@ -228,11 +230,16 @@ export class DefenseEngine {
     if (id === "vitamin") this.abilityCd = { lung: 0, liver: 0, heart: 0 };
     if (id === "energy") this.next.attackSpeed = 1.35;
     if (id === "snack") { this.nutrients += 130; this.next.extraEnemies.push("fat", "fat", "fat"); }
-    if (id === "allnight") { this.upgrade(this.selected, true); this.life = Math.max(0, this.life - 2); }
+    if (id === "allnight") {
+      this.upgrade(this.selected, true);
+      for (const organ of TYPES) this.strain[organ] = Math.min(100, this.strain[organ] + 10);
+    }
     if (id === "drinks") { this.nutrients += 180; this.next.extraEnemies.push("toxin", "toxin"); }
     if (id === "meditation") this.next.enemySpeed = .82;
-    if (id === "walk") { this.life = Math.min(GAME_BALANCE.maxLife, this.life + 1); this.nutrients += 60; }
-    if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; this.emit(); return; }
+    if (id === "walk") {
+      for (const organ of TYPES) this.strain[organ] = Math.max(0, this.strain[organ] - 8);
+      this.nutrients += 60;
+    }
     this.wave += 1;
     this.phase = "prep";
     this.countdown = GAME_BALANCE.prepSeconds;
@@ -289,6 +296,15 @@ export class DefenseEngine {
     } else if (this.phase === "wave") {
       this.spawnClock += dt;
       while (this.queue.length && this.spawnClock >= this.queue[0].at) this.spawn(this.queue.shift()!.type);
+      if (!this.queue.length && this.enemies.length) {
+        this.recirculationClock += dt;
+        if (this.recirculationClock >= 6) {
+          this.recirculationClock = 0;
+          const source = this.enemies[Math.floor(Math.random() * this.enemies.length)];
+          this.spawn(source.type);
+          this.message = "순환 중 침입자가 증식합니다!";
+        }
+      }
       this.moveEnemies(dt);
       this.applyStatuses(dt);
       this.updatePhysiology(dt);
@@ -317,6 +333,7 @@ export class DefenseEngine {
     for (const type of this.next.extraEnemies) { this.queue.push({ type, at: extraAt }); extraAt += .4; }
     this.queue.sort((a, b) => a.at - b.at);
     this.spawnClock = 0;
+    this.recirculationClock = 0;
     this.phase = "wave";
     this.message = config.groups.some((g) => ENEMIES[g.type].boss) ? `⚠ ${config.label}` : `${config.clock} · ${config.label}`;
   }
@@ -340,24 +357,23 @@ export class DefenseEngine {
       const route=PATHS[enemy.route];
       enemy.hit = Math.max(0, enemy.hit - dt);
       enemy.slow = Math.max(0, enemy.slow - dt);
-      const base = ENEMIES[enemy.type];
       const slowFactor = enemy.slow > 0 ? .45 : 1;
+      const base = ENEMIES[enemy.type];
       const sprintFactor = base.sprint && Math.sin(this.elapsed * 1.7) > .72 ? 1.7 : 1;
       const flowFactor = this.adrenaline > 0 ? .48 : 1;
       let move = enemy.speed * dt * slowFactor * sprintFactor * flowFactor;
-      while (move > 0 && enemy.path < route.length - 1) {
-        const target = route[enemy.path + 1], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
-        if (move >= dist) { enemy.x = target.x; enemy.y = target.y; enemy.path++; move -= dist; }
+      while (move > 0) {
+        const target = route[(enemy.path + 1) % route.length], dx = target.x - enemy.x, dy = target.y - enemy.y, dist = Math.hypot(dx, dy);
+        if (move >= dist) { enemy.x = target.x; enemy.y = target.y; enemy.path = (enemy.path + 1) % route.length; move -= dist; }
         else { enemy.x += dx / dist * move; enemy.y += dy / dist * move; move = 0; }
-      }
-      if (enemy.path >= route.length - 1) {
-        this.life = Math.max(0, this.life - base.lifeDamage);
-        enemy.dead = 1; this.flash = .35; this.shake = .3; this.combo = 0;
-        this.floaters.push({ x: CORE.x - 30, y: CORE.y - 40, text: `-${base.lifeDamage} 생명`, color: "#ff4364", life: 1, size: 16 });
       }
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
-    if (this.life <= 0) { this.phase = "defeat"; this.message = "몸이 버티지 못했습니다."; }
+    this.life = Math.max(0, GAME_BALANCE.maxLife - this.enemies.length);
+    if (this.enemies.length > GAME_BALANCE.maxLife) {
+      this.phase = "defeat"; this.message = "침입자 60기 초과 · 순환계 붕괴";
+      this.flash = .6; this.shake = .5;
+    }
   }
 
   private updatePhysiology(dt: number) {
@@ -380,7 +396,6 @@ export class DefenseEngine {
       this.overloadTick = 1;
       const overloaded = TYPES.filter((id) => this.strain[id] >= 100);
       if (overloaded.length) {
-        this.life = Math.max(0, this.life - overloaded.length);
         this.flash = .18; this.shake = .16;
         this.message = `${overloaded.map((id) => ORGANS[id].name).join("·")} 과부하!`;
       }
@@ -404,7 +419,7 @@ export class DefenseEngine {
   }
 
   private progress(e: Enemy): number {
-    const route=PATHS[e.route],next=route[Math.min(e.path+1,route.length-1)];
+    const route=PATHS[e.route],next=route[(e.path+1)%route.length];
     return e.path*10000-Math.hypot(next.x-e.x,next.y-e.y);
   }
 
@@ -665,23 +680,24 @@ export class DefenseEngine {
     ];
     for(const z of zones){const g=c.createRadialGradient(z.x,z.y,25,z.x,z.y,z.r);g.addColorStop(0,z.color);g.addColorStop(1,"transparent");c.fillStyle=g;c.fillRect(z.x-z.r,z.y-z.r,z.r*2,z.r*2)}
     c.fillStyle = "rgba(255,214,217,.6)"; c.font = "800 10px sans-serif"; c.letterSpacing = "2px";
-    c.fillText("CELL DIFFERENTIATION MAP · TWO INFLOW ROUTES", 355, 28);
+    c.fillText("CELL DIFFERENTIATION MAP · CIRCULATORY LOOP", 355, 28);
     c.letterSpacing = "0px";
   }
   private drawVessels(c: CanvasRenderingContext2D) {
     c.lineCap = "round"; c.lineJoin = "round";
-    const routes:[RouteType,string,string][]=[
-      ["lung","#326f87","#8ee8e2"],["liver","#8a4e3b","#e8ae67"],["heart","#96314d","#ff8392"],
-    ];
-    for(const [id,base,highlight] of routes){
-      const points=PATHS[id];this.path(c,points);c.strokeStyle="rgba(7,3,10,.48)";c.lineWidth=id==="heart"?38:50;c.stroke();
-      this.path(c,points);c.strokeStyle=base;c.lineWidth=id==="heart"?29:39;c.stroke();
-      this.path(c,points);c.strokeStyle=highlight;c.globalAlpha=.16;c.lineWidth=4;c.stroke();c.globalAlpha=1;
+    const loop=[...CIRCULATION,CIRCULATION[0]];
+    this.path(c,loop);c.strokeStyle="rgba(7,3,10,.52)";c.lineWidth=50;c.stroke();
+    this.path(c,loop);c.strokeStyle="#84364d";c.lineWidth=39;c.stroke();
+    this.path(c,loop);c.strokeStyle="#ff9cad";c.globalAlpha=.2;c.lineWidth=5;c.stroke();c.globalAlpha=1;
+    c.fillStyle="#ffb0ba";c.font="900 10px sans-serif";c.fillText("전신 순환 혈관 · 침입자는 제거될 때까지 계속 순환",22,82);
+    c.fillStyle="#edbd78";c.fillText("간세포 분화권",245,565);
+    c.fillStyle="#9cebe6";c.fillText("폐세포 분화권",185,42);
+    c.fillStyle="#ff9aa7";c.fillText("심장세포 분화권",755,535);
+    for(let i=0;i<CIRCULATION.length;i+=2){
+      const a=CIRCULATION[i],b=CIRCULATION[(i+1)%CIRCULATION.length],angle=Math.atan2(b.y-a.y,b.x-a.x);
+      c.save();c.translate((a.x+b.x)/2,(a.y+b.y)/2);c.rotate(angle);c.fillStyle="rgba(255,216,221,.62)";
+      c.beginPath();c.moveTo(8,0);c.lineTo(-6,-5);c.lineTo(-2,0);c.lineTo(-6,5);c.closePath();c.fill();c.restore();
     }
-    c.fillStyle="#9cebe6";c.font="900 10px sans-serif";c.fillText("상부 유입 · 세균 / 먼지 / 바이러스",18,88);
-    c.fillStyle="#edbd78";c.fillText("하부 유입 · 독소 / 지방",18,535);
-    c.fillStyle="#ff9aa7";c.fillText("합류 혈관",790,286);
-    for(let i=0;i<14;i++){const t=(this.elapsed*.09+i/14)%1,x=780+t*190,y=302+Math.sin(i)*4;c.beginPath();c.ellipse(x,y,7,3.5,-.1,0,Math.PI*2);c.fillStyle="rgba(255,183,192,.42)";c.fill()}
   }
   private drawCore(c: CanvasRenderingContext2D) {
     const beat = 1 + Math.sin(this.elapsed * 4) * .08;
@@ -694,7 +710,7 @@ export class DefenseEngine {
     // 코어 생명 게이지
     c.fillStyle = "rgba(0,0,0,.45)"; c.fillRect(CORE.x - 30, CORE.y + 42, 60, 6);
     c.fillStyle = frac > .34 ? "#80e0a7" : "#ff4364"; c.fillRect(CORE.x - 30, CORE.y + 42, 60 * frac, 6);
-    c.fillStyle = "#ffc0c8"; c.font = "800 10px sans-serif"; c.textAlign = "center"; c.fillText("생명 코어", CORE.x, CORE.y - 48); c.textAlign = "start";
+    c.fillStyle = "#ffc0c8"; c.font = "800 10px sans-serif"; c.textAlign = "center"; c.fillText("순환 여유", CORE.x, CORE.y - 48); c.textAlign = "start";
   }
   private drawOrgans(c: CanvasRenderingContext2D) {
     for (const id of TYPES) {
