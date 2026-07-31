@@ -9,6 +9,23 @@ import type { HudState, OrganType, TargetMode } from "./types";
 const TYPES: OrganType[] = ["lung", "liver", "heart"];
 const TARGET_LABEL: Record<TargetMode, string> = { first: "선두 우선", last: "후미 우선", strong: "최강 우선" };
 
+// 개인 최고 기록 (localStorage 영속)
+type BestRecord = { kills: number; combo: number; wave: number };
+const BEST_KEY = "janggi-best";
+function loadBest(): BestRecord | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(BEST_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<BestRecord>;
+    return { kills: parsed.kills ?? 0, combo: parsed.combo ?? 0, wave: parsed.wave ?? 0 };
+  } catch { return null; }
+}
+function saveBest(record: BestRecord) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(BEST_KEY, JSON.stringify(record)); } catch { /* 저장 불가 무시 */ }
+}
+
 const initialHud: HudState = {
   phase: "prep", wave: 1, totalWaves: WAVES.length, life: GAME_BALANCE.initialLife, maxLife: GAME_BALANCE.maxLife,
   nutrients: GAME_BALANCE.initialNutrients, elapsed: 0, remaining: 0, countdown: GAME_BALANCE.prepSeconds,
@@ -30,13 +47,36 @@ export default function DefenseGame() {
   const [hud, setHud] = useState(initialHud);
   const [run, setRun] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [best, setBest] = useState<BestRecord | null>(() => loadBest());
+  const bestRef = useRef<BestRecord | null>(best);
+  const recordedRef = useRef(false);
+
+  // 엔진 HUD 콜백: 상태 반영 + 게임 종료 시 최고 기록을 1회만 갱신
+  const handleHud = useCallback((h: HudState) => {
+    setHud(h);
+    const over = h.phase === "victory" || h.phase === "defeat";
+    if (over && !recordedRef.current) {
+      recordedRef.current = true;
+      const prev = bestRef.current;
+      const merged: BestRecord = {
+        kills: Math.max(prev?.kills ?? 0, h.kills),
+        combo: Math.max(prev?.combo ?? 0, h.bestCombo),
+        wave: Math.max(prev?.wave ?? 0, h.phase === "victory" ? WAVES.length : h.wave),
+      };
+      bestRef.current = merged;
+      saveBest(merged);
+      setBest(merged);
+    } else if (!over) {
+      recordedRef.current = false; // 재시작 대비
+    }
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    const engine = new DefenseEngine(canvasRef.current, setHud);
+    const engine = new DefenseEngine(canvasRef.current, handleHud);
     engineRef.current = engine;
     return () => { engine.destroy(); engineRef.current = null; };
-  }, [run]);
+  }, [run, handleHud]);
 
   const selected = ORGANS[hud.selected];
   const selectedState = hud.organs[hud.selected];
@@ -108,7 +148,8 @@ export default function DefenseGame() {
             <span>{hud.phase === "prep" ? `${Math.ceil(hud.countdown)}초 후 시작` : hud.phase === "wave" ? `${hud.clock} · WAVE ${hud.wave}` : "생활 습관 정비"}</span>
             <b>{hud.message}</b>
           </div>
-          <canvas ref={canvasRef} width="1000" height="600" aria-label="장기전 게임 맵" />
+          <canvas ref={canvasRef} width="1000" height="600" aria-label="장기전 게임 맵" role="img" />
+          <p className="sr-only" role="status" aria-live="polite">{hud.message}</p>
 
           {hud.phase === "prep" && (
             <button className="start-now" onClick={startNow}>
@@ -159,7 +200,7 @@ export default function DefenseGame() {
               <p>{selectedTowerConfig ? selectedTowerConfig.role : "미분화 세포를 심고 위치에 맞춰 진화시키세요."}</p>
             </div>
             {!selectedTower ? <div className="tower-shop">
-              <button onClick={()=>engineRef.current?.buildTower("stem")} disabled={hud.nutrients<GAME_BALANCE.stemCost} style={{"--tower":CELL_TOWERS.stem.color} as React.CSSProperties}>
+              <button onClick={()=>engineRef.current?.buildTower()} disabled={hud.nutrients<GAME_BALANCE.stemCost} style={{"--tower":CELL_TOWERS.stem.color} as React.CSSProperties}>
                 <img className="tower-thumb-img" src="/art/cells-v2/cell-undifferentiated.png" alt="" />
                 <span><b>미분화 세포 심기</b><small>어디서든 세 계열로 성장</small></span><em>● {GAME_BALANCE.stemCost}</em>
               </button>
@@ -242,6 +283,7 @@ export default function DefenseGame() {
         <h2>{hud.phase === "victory" ? "오늘도 살아남았습니다." : "몸이 버티지 못했습니다."}</h2>
         <div><p><span>처치 수</span><b>{hud.kills}</b></p><p><span>최고 콤보</span><b>{hud.bestCombo}×</b></p><p><span>도달 시간대</span><b>{hud.clock}</b></p></div>
         <p className="levels">장기 레벨 · 폐 {hud.organs.lung.level} / 간 {hud.organs.liver.level} / 심장 {hud.organs.heart.level}</p>
+        {best && <p className="best-record">개인 최고 · 처치 {best.kills} · 콤보 {best.combo}× · 도달 웨이브 {best.wave}/{WAVES.length}</p>}
         <button onClick={restart}>다시 방어하기</button>
       </section></div>}
     </main>

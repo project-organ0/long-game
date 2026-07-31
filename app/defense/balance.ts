@@ -26,19 +26,19 @@ export const GAME_BALANCE = {
 
 export const ORGANS: Record<OrganType, OrganConfig> = {
   lung: {
-    id: "lung", name: "폐", emoji: "🫁", role: "폐 구역 본부 · 주변 폐포 세포 강화", color: "#6dd6d0",
+    id: "lung", name: "폐", role: "폐 구역 본부 · 주변 폐포 세포 강화", color: "#6dd6d0",
     baseDamage: 12, baseAttackSpeed: 0.95, range: 178, maxLevel: 5,
     bonusAgainst: "dust", bonusMultiplier: 1.7, splash: 64,
     ability: { id: "breath", name: "심호흡", icon: "🌬", description: "사거리 전체에 정화 폭발 · 3초간 적 이동 -55%", cooldown: 16, duration: 3 },
   },
   liver: {
-    id: "liver", name: "간", emoji: "🟤", role: "간문맥 본부 · 주변 간세포 강화", color: "#e9a85d",
+    id: "liver", name: "간", role: "간문맥 본부 · 주변 간세포 강화", color: "#e9a85d",
     baseDamage: 30, baseAttackSpeed: 0.56, range: 188, maxLevel: 5,
     bonusAgainst: "toxin", bonusMultiplier: 1.9,
     ability: { id: "detox", name: "해독", icon: "🧪", description: "사거리 내 모든 적에게 5초간 강력한 독 도트", cooldown: 18, duration: 5 },
   },
   heart: {
-    id: "heart", name: "심장", emoji: "🫀", role: "합류부 본부 · 주변 심장 세포 강화", color: "#ff647c",
+    id: "heart", name: "심장", role: "합류부 본부 · 주변 심장 세포 강화", color: "#ff647c",
     baseDamage: 11, baseAttackSpeed: 1.9, range: 172, maxLevel: 5,
     bonusAgainst: "virus", bonusMultiplier: 1.8,
     ability: { id: "adrenaline", name: "혈류 조절", icon: "💓", description: "5초간 전체 혈류를 52% 늦추고 심장 부담을 낮춤", cooldown: 20, duration: 5 },
@@ -46,12 +46,12 @@ export const ORGANS: Record<OrganType, OrganConfig> = {
 };
 
 export const ENEMIES: Record<EnemyType, EnemyConfig> = {
-  bacteria:     { id:"bacteria", name:"세균 군체", glyph:"●", color:"#76507d", maxHp:46, speed:48, reward:12, lifeDamage:1, split:true },
-  dust:         { id:"dust", name:"미세먼지 뭉치", glyph:"●", color:"#777b7e", maxHp:92, speed:32, reward:18, lifeDamage:1 },
-  toxin:        { id:"toxin", name:"독소 방울", glyph:"●", color:"#778447", maxHp:76, speed:40, reward:20, lifeDamage:2, debuff:true },
-  fat:          { id:"fat", name:"지방 덩어리", glyph:"●", color:"#e3b84f", maxHp:180, speed:24, reward:30, lifeDamage:2 },
-  virus:        { id:"virus", name:"캡슐 바이러스", glyph:"●", color:"#665b9b", maxHp:34, speed:105, reward:16, lifeDamage:1, dodge:true },
-  inflammation: { id:"inflammation", name:"만성 염증 코어", glyph:"◆", color:"#d36562", maxHp:1100, speed:22, reward:360, lifeDamage:5, regen:10, sprint:true, boss:true },
+  bacteria:     { id:"bacteria", name:"세균 군체", color:"#76507d", maxHp:46, speed:48, reward:12, split:true },
+  dust:         { id:"dust", name:"미세먼지 뭉치", color:"#777b7e", maxHp:92, speed:32, reward:18 },
+  toxin:        { id:"toxin", name:"독소 방울", color:"#778447", maxHp:76, speed:40, reward:20, debuff:true },
+  fat:          { id:"fat", name:"지방 덩어리", color:"#e3b84f", maxHp:180, speed:24, reward:30 },
+  virus:        { id:"virus", name:"캡슐 바이러스", color:"#665b9b", maxHp:34, speed:105, reward:16, dodge:true },
+  inflammation: { id:"inflammation", name:"만성 염증 코어", color:"#d36562", maxHp:1100, speed:22, reward:360, regen:10, sprint:true, boss:true },
 };
 
 export const CELL_TOWERS: Record<TowerType, TowerConfig> = {

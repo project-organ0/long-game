@@ -9,7 +9,6 @@ type Enemy = {
   hit: number; dead: number; slow: number; poison: number; poisonDps: number; regenClock: number;
   dodged: boolean; splitDepth: number; route: RouteType;
 };
-type Projectile = { x: number; y: number; tx: number; ty: number; target: number; organ: OrganType; damage: number; color: string; splash: number; life: number };
 type Floater = { x: number; y: number; text: string; color: string; life: number; size: number };
 type Particle = { x: number; y: number; vx: number; vy: number; color: string; life: number };
 type Tracer = { x: number; y: number; tx: number; ty: number; color: string; life: number };
@@ -65,11 +64,9 @@ export class DefenseEngine {
   private cellImages: Record<string, HTMLImageElement> = {};
   private enemyImages: Partial<Record<EnemyType, HTMLImageElement>> = {};
   private next: NextWaveEffects = { attackSpeed: 1, enemySpeed: 1, extraEnemies: [] };
-  private organCooldown: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private abilityCd: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
   private organs: Record<OrganType, OrganState> = { lung: { id: "lung", level: 1 }, liver: { id: "liver", level: 1 }, heart: { id: "heart", level: 1 } };
   private enemies: Enemy[] = [];
-  private projectiles: Projectile[] = [];
   private floaters: Floater[] = [];
   private particles: Particle[] = [];
   private tracers: Tracer[] = [];
@@ -82,6 +79,7 @@ export class DefenseEngine {
   private message = "방어 준비";
   private flash = 0;
   private shake = 0;
+  private background: HTMLCanvasElement | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private onHud: (hud: HudState) => void) {
     const ctx = canvas.getContext("2d");
@@ -113,7 +111,7 @@ export class DefenseEngine {
     this.emit();
   }
 
-  buildTower(type: TowerType = "stem") {
+  buildTower() {
     if (this.selectedSlot === null || this.towers.some((t) => t.slot === this.selectedSlot)) return false;
     const config = CELL_TOWERS.stem;
     if (this.nutrients < config.cost) { this.message = "영양분이 부족합니다"; this.emit(); return false; }
@@ -309,7 +307,6 @@ export class DefenseEngine {
       this.applyStatuses(dt);
       this.updatePhysiology(dt);
       this.attackTowers(dt);
-      this.moveProjectiles(dt);
       if (!this.queue.length && !this.enemies.length) this.finishWave();
     }
     for (const f of this.floaters) { f.y -= 28 * dt; f.life -= dt; }
@@ -448,11 +445,14 @@ export class DefenseEngine {
       const family=tower.type==="stem"?null:config.family;
       const headquarters=family&&Math.hypot(p.x-ORGAN_POS[family].x,p.y-ORGAN_POS[family].y)<225
         ?1+this.organs[family].level*.08:1;
+      // 부담도 페널티: 관할 장기(계열 또는 지역 적성)가 과부하면 세포 위력 감소
+      const governing=family??TOWER_SLOTS[tower.slot].affinity;
+      const strainMult=this.strain[governing]>70?.62:1;
       const range=config.range*(1+(tower.level-1)*.08);
       const list=this.enemies.filter((e)=>Math.hypot(e.x-p.x,e.y-p.y)<=range);
       if(!list.length)continue;
       const target=this.pickTarget(list);
-      let damage=config.damage*levelMult*synergy.damage*headquarters;
+      let damage=config.damage*levelMult*synergy.damage*headquarters*strainMult;
       if(config.bonusAgainst===target.type)damage*=config.bonusMultiplier??1;
       const victims=config.splash?this.enemies.filter((e)=>Math.hypot(e.x-target.x,e.y-target.y)<=config.splash!):[target];
       for(const victim of victims){
@@ -464,49 +464,10 @@ export class DefenseEngine {
       this.tracers.push({x:p.x,y:p.y,tx:target.x,ty:target.y,color:config.color,life:.16});
       if(config.splash)this.rings.push({x:target.x,y:target.y,r:5,maxR:config.splash,color:config.color,life:.3,width:2});
       tower.attackAnim=.48;
-      const toxinDebuff=this.enemies.some((e)=>e.type==="toxin"&&Math.hypot(e.x-p.x,e.y-p.y)<125)?.72:1;
-      tower.cooldown=1/(config.attackSpeed*synergy.speed*toxinDebuff);
+      const toxinDebuff=this.enemies.some((e)=>ENEMIES[e.type].debuff&&Math.hypot(e.x-p.x,e.y-p.y)<125)?.72:1;
+      tower.cooldown=1/(config.attackSpeed*synergy.speed*this.next.attackSpeed*toxinDebuff);
     }
     this.enemies=this.enemies.filter((e)=>!e.dead);
-  }
-
-  private attack(dt: number) {
-    for (const id of TYPES) {
-      const config = ORGANS[id], state = this.organs[id], p = ORGAN_POS[id];
-      this.organCooldown[id] -= dt;
-      if (this.organCooldown[id] > 0) continue;
-      const range = config.range * GAME_BALANCE.levelRangeMultiplier[state.level - 1];
-      const inRange = this.enemies.filter((e) => Math.hypot(e.x - p.x, e.y - p.y) <= range);
-      if (!inRange.length) continue;
-      const target = this.pickTarget(inRange);
-      const damage = config.baseDamage * GAME_BALANCE.levelDamageMultiplier[state.level - 1] * this.permanentDamage * (config.bonusAgainst === target.type ? config.bonusMultiplier! : 1);
-      this.projectiles.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, target: target.id, organ: id, damage, color: config.color, splash: config.splash || 0, life: .5 });
-      this.tracers.push({ x: p.x, y: p.y, tx: target.x, ty: target.y, color: config.color, life: .12 });
-      const strainMult = this.strain[id] > 70 ? .62 : 1;
-      this.organCooldown[id] = 1 / (config.baseAttackSpeed * GAME_BALANCE.levelSpeedMultiplier[state.level - 1] * this.next.attackSpeed * strainMult);
-    }
-  }
-
-  private moveProjectiles(dt: number) {
-    for (const shot of this.projectiles) {
-      const enemy = this.enemies.find((e) => e.id === shot.target);
-      if (enemy) { shot.tx = enemy.x; shot.ty = enemy.y; }
-      const dx = shot.tx - shot.x, dy = shot.ty - shot.y, dist = Math.hypot(dx, dy);
-      const move = 620 * dt;
-      if (dist < move || shot.life <= 0) { if (enemy) this.impact(enemy, shot.damage, shot); shot.life = -1; }
-      else { shot.x += dx / dist * move; shot.y += dy / dist * move; shot.life -= dt; }
-    }
-    this.projectiles = this.projectiles.filter((p) => p.life > 0);
-  }
-
-  private impact(enemy: Enemy, damage: number, shot: Projectile) {
-    const victims = shot.splash ? this.enemies.filter((e) => Math.hypot(e.x - enemy.x, e.y - enemy.y) <= shot.splash) : [enemy];
-    if (shot.splash) this.rings.push({ x: enemy.x, y: enemy.y, r: 6, maxR: shot.splash, color: shot.color, life: .32, width: 3 });
-    for (const victim of victims) {
-      const dealt = victim === enemy ? damage : damage * .6;
-      this.damageEnemy(victim, dealt, shot.color);
-    }
-    this.enemies = this.enemies.filter((e) => !e.dead);
   }
 
   private damageEnemy(enemy: Enemy, dealt: number, color: string, silent = false) {
@@ -532,7 +493,7 @@ export class DefenseEngine {
       const n = ENEMIES[enemy.type].boss ? 22 : 10;
       for (let i = 0; i < n; i++) this.particles.push({ x: enemy.x, y: enemy.y, vx: (Math.random() - .5) * 150, vy: (Math.random() - .5) * 150, color: ENEMIES[enemy.type].color, life: .65 });
       if (ENEMIES[enemy.type].boss) { this.shake = .35; this.rings.push({ x: enemy.x, y: enemy.y, r: 10, maxR: 120, color: ENEMIES[enemy.type].color, life: .8, width: 5 }); }
-      if(enemy.type==="bacteria"&&enemy.splitDepth===0){
+      if(ENEMIES[enemy.type].split&&enemy.splitDepth===0){
         for(const offset of [-11,11])this.enemies.push({
           ...enemy,id:++this.enemyId,hp:enemy.maxHp*.28,maxHp:enemy.maxHp*.28,x:enemy.x+offset,y:enemy.y+offset*.25,
           dead:0,splitDepth:1,dodged:true,speed:enemy.speed*1.12,
@@ -574,7 +535,7 @@ export class DefenseEngine {
     const w = WAVES[Math.min(this.wave - 1, WAVES.length - 1)];
     const abilities = {} as HudState["abilities"];
     for (const id of TYPES) {
-      const cd = this.abilityCd[id], total = ORGANS[id].ability.cooldown;
+      const cd = this.abilityCd[id];
       abilities[id] = { id: ORGANS[id].ability.id, cooldown: cd, ready: cd <= 0, active: id === "heart" ? this.adrenaline : 0 };
     }
     const oxygen = Math.max(0, Math.min(100, 100 - this.strain.lung * .78));
@@ -598,20 +559,35 @@ export class DefenseEngine {
   }
 
   // ── 렌더링 ─────────────────────────────────────────
+  // 조직·혈관 배경을 오프스크린 캔버스에 1회 렌더링해 재사용한다.
+  private ensureBackground(): HTMLCanvasElement | null {
+    if (this.background) return this.background;
+    if (typeof document === "undefined") return null;
+    const bg = document.createElement("canvas");
+    bg.width = 1000; bg.height = 600;
+    const bc = bg.getContext("2d");
+    if (!bc) return null;
+    this.drawBody(bc);
+    this.drawVessels(bc);
+    this.background = bg;
+    return bg;
+  }
+
   private draw() {
     const c = this.ctx;
     c.save();
     c.clearRect(0, 0, 1000, 600);
     if (this.shake > 0) c.translate((Math.random() - .5) * 10, (Math.random() - .5) * 10);
-    this.drawBody(c);
-    this.drawVessels(c);
+    // 정적 배경(조직·혈관)은 오프스크린에 한 번만 그려두고 매 프레임 복사
+    const bg = this.ensureBackground();
+    if (bg) c.drawImage(bg, 0, 0);
+    else { this.drawBody(c); this.drawVessels(c); }
     this.drawTowerSlots(c);
     this.drawCore(c);
     this.drawOrgans(c);
     for (const t of this.tracers) { c.globalAlpha = Math.max(0, t.life / .12) * .8; c.strokeStyle = t.color; c.lineWidth = 2.5; c.beginPath(); c.moveTo(t.x, t.y); c.lineTo(t.tx, t.ty); c.stroke(); } c.globalAlpha = 1;
     for (const r of this.rings) { c.globalAlpha = Math.max(0, r.life); c.strokeStyle = r.color; c.lineWidth = r.width; c.beginPath(); c.arc(r.x, r.y, r.r, 0, Math.PI * 2); c.stroke(); } c.globalAlpha = 1;
     for (const enemy of this.enemies) this.drawEnemy(c, enemy);
-    for (const shot of this.projectiles) { c.beginPath(); c.arc(shot.x, shot.y, shot.organ === "lung" ? 9 : shot.organ === "liver" ? 7 : 5, 0, Math.PI * 2); c.fillStyle = shot.color; c.shadowColor = shot.color; c.shadowBlur = 12; c.fill(); c.shadowBlur = 0; }
     for (const p of this.particles) { c.globalAlpha = Math.max(0, p.life); c.fillStyle = p.color; c.fillRect(p.x, p.y, 4, 4); } c.globalAlpha = 1;
     for (const f of this.floaters) { c.globalAlpha = Math.min(1, f.life * 2.4); c.fillStyle = f.color; c.font = `800 ${f.size}px sans-serif`; c.textAlign = "center"; c.fillText(f.text, f.x, f.y); } c.globalAlpha = 1; c.textAlign = "start";
     if (this.adrenaline > 0) { c.strokeStyle = `rgba(78,229,225,${.25 + Math.sin(this.elapsed * 6) * .15})`; c.lineWidth = 6; c.strokeRect(3, 3, 994, 594); }
