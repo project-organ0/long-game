@@ -155,6 +155,7 @@ button { color:inherit }
 /* One-screen defense layout */
 body:has(.game-shell){overflow:hidden}
 .rotate-notice{display:none}
+.mobile-build-cta,.mobile-first-guide{display:none}
 .game-shell{height:100dvh;min-height:0;padding:7px 12px;display:flex;flex-direction:column;overflow:hidden}
 .game-header{width:100%;min-height:42px;height:42px;flex:0 0 42px}
 .game-header h1{font-size:24px}.game-header p{margin:0}
@@ -221,4 +222,8 @@ body:has(.game-shell){overflow:hidden}
   .hud{margin:4px auto;min-height:40px;flex-basis:40px}.hud>div{padding:4px 7px}.hud strong{font-size:14px}
   .game-grid{grid-template-columns:1fr}.organ-panel{display:none}.organ-tabs{display:grid}.arena-wrap{height:100%}
   .control-bar{height:52px;flex-basis:52px}.start-now{bottom:64px}
+  .mobile-first-guide{position:absolute;z-index:5;left:50%;bottom:113px;display:block;margin:0;transform:translateX(-50%);white-space:nowrap;padding:5px 10px;border-radius:999px;background:rgba(8,13,13,.9);color:white;font-size:10px;font-weight:800;pointer-events:none}
+  .mobile-build-cta{position:absolute;z-index:6;left:50%;bottom:61px;display:block;min-width:290px;min-height:48px;transform:translateX(-50%);padding:10px 18px;border:2px solid var(--ink);border-radius:999px;background:var(--acid);color:var(--ink);box-shadow:3px 3px 0 var(--ink);font-size:12px;font-weight:950;cursor:pointer}
+  .mobile-build-cta:disabled{background:#d7d9d0;color:#59615f;opacity:.92}
+  .start-now{left:auto;right:10px;bottom:62px;transform:none;padding:9px 12px;animation:none}
 }

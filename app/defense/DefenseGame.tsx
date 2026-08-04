@@ -51,6 +51,10 @@ export default function DefenseGame() {
   const [hud, setHud] = useState(initialHud);
   const [run, setRun] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [rotationBlocked, setRotationBlocked] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 520px) and (orientation: portrait)").matches
+  );
+  const rotationBlockedRef = useRef(rotationBlocked);
   const [best, setBest] = useState<BestRecord | null>(() => loadBest());
   const bestRef = useRef<BestRecord | null>(best);
   const recordedRef = useRef(false);
@@ -81,9 +85,25 @@ export default function DefenseGame() {
     if (!canvasRef.current) return;
     sendGameLabEvent("game_run_started", { runNumber: run + 1 });
     const engine = new DefenseEngine(canvasRef.current, handleHud);
+    engine.setSuspended(rotationBlockedRef.current);
     engineRef.current = engine;
     return () => { engine.destroy(); engineRef.current = null; };
   }, [run, handleHud]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 520px) and (orientation: portrait)");
+    const sync = () => {
+      rotationBlockedRef.current = media.matches;
+      setRotationBlocked(media.matches);
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    engineRef.current?.setSuspended(rotationBlocked);
+  }, [rotationBlocked]);
 
   useEffect(() => {
     if (hud.wave <= 1) return;
@@ -169,6 +189,21 @@ export default function DefenseGame() {
               ▶ 웨이브 즉시 시작 <em>+{Math.round(hud.countdown * GAME_BALANCE.earlyStartInterest)} 영양분</em>
             </button>
           )}
+
+          {hud.towers.length === 0 && (
+            <p className="mobile-first-guide">① 빈 원 선택 · ② 세포 심기 · ③ 장기 계열로 진화</p>
+          )}
+          <button
+            className="mobile-build-cta"
+            onClick={() => engineRef.current?.buildTower()}
+            disabled={hud.selectedSlot === null || Boolean(selectedTower) || hud.nutrients < GAME_BALANCE.stemCost}
+          >
+            {hud.selectedSlot === null
+              ? "맵의 빈 원을 먼저 선택하세요"
+              : selectedTower
+                ? "다른 빈 원을 선택하세요"
+                : `＋ 미분화 세포 심기 · ● ${GAME_BALANCE.stemCost}`}
+          </button>
 
           <div className="control-bar">
             <div className="ability-bar" role="group" aria-label="장기 액티브 스킬">

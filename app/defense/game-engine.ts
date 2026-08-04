@@ -54,6 +54,7 @@ export class DefenseEngine {
   private targetMode: TargetMode = "first";
   private selected: OrganType = "heart";
   private paused = false;
+  private suspended = false;
   private permanentDamage = 1;
   private adrenaline = 0; // 남은 초
   private strain: Record<OrganType, number> = { lung: 0, liver: 0, heart: 0 };
@@ -103,6 +104,11 @@ export class DefenseEngine {
 
   togglePause() { this.paused = !this.paused; this.message = this.paused ? "잠시 숨 고르는 중" : "방어 재개"; this.emit(); }
   isPaused() { return this.paused; }
+  setSuspended(suspended: boolean) {
+    this.suspended = suspended;
+    // 화면을 돌린 뒤 복귀할 때 대기 시간을 프레임 시간으로 오인하지 않도록 한다.
+    this.last = performance.now();
+  }
   selectOrgan(id: OrganType) { this.selected = id; this.selectedSlot = null; this.emit(); }
   setSpeed(mult: number) { this.speed = mult; this.emit(); }
   cycleTargetMode() {
@@ -266,7 +272,7 @@ export class DefenseEngine {
   private loop = (now: number) => {
     const raw = (now - this.last) / 1000 || 0;
     this.last = now;
-    const active = !this.paused && this.phase !== "cards" && this.phase !== "victory" && this.phase !== "defeat";
+    const active = !this.paused && !this.suspended && this.phase !== "cards" && this.phase !== "victory" && this.phase !== "defeat";
     if (active) {
       // 배속: 큰 프레임을 잘게 나눠 시뮬레이션 안정성 유지
       const total = Math.min(.05, raw) * this.speed;
