@@ -25,6 +25,10 @@ function saveBest(record: BestRecord) {
   if (typeof window === "undefined") return;
   try { window.localStorage.setItem(BEST_KEY, JSON.stringify(record)); } catch { /* 저장 불가 무시 */ }
 }
+function sendGameLabEvent(eventName: string, metadata: Record<string, unknown> = {}) {
+  if (typeof window === "undefined" || !window.opener) return;
+  window.opener.postMessage({ source: "game-lab-game", eventName, metadata }, "*");
+}
 
 const initialHud: HudState = {
   phase: "prep", wave: 1, totalWaves: WAVES.length, life: GAME_BALANCE.initialLife, maxLife: GAME_BALANCE.maxLife,
@@ -57,6 +61,8 @@ export default function DefenseGame() {
     const over = h.phase === "victory" || h.phase === "defeat";
     if (over && !recordedRef.current) {
       recordedRef.current = true;
+      sendGameLabEvent("game_run_ended", { runNumber: run + 1, endReason: h.phase === "victory" ? "completed" : "game_over", wave: h.wave, progress: h.phase === "victory" ? 1 : h.wave / WAVES.length, score: h.kills, kills: h.kills, bestCombo: h.bestCombo });
+      if (h.phase === "victory") sendGameLabEvent("game_completed", { runNumber: run + 1, score: h.kills });
       const prev = bestRef.current;
       const merged: BestRecord = {
         kills: Math.max(prev?.kills ?? 0, h.kills),
@@ -69,14 +75,20 @@ export default function DefenseGame() {
     } else if (!over) {
       recordedRef.current = false; // 재시작 대비
     }
-  }, []);
+  }, [run]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
+    sendGameLabEvent("game_run_started", { runNumber: run + 1 });
     const engine = new DefenseEngine(canvasRef.current, handleHud);
     engineRef.current = engine;
     return () => { engine.destroy(); engineRef.current = null; };
   }, [run, handleHud]);
+
+  useEffect(() => {
+    if (hud.wave <= 1) return;
+    sendGameLabEvent("game_progress", { runNumber: run + 1, wave: hud.wave, progress: (hud.wave - 1) / WAVES.length, score: hud.kills });
+  }, [hud.wave, run]);
 
   const selected = ORGANS[hud.selected];
   const selectedState = hud.organs[hud.selected];
@@ -91,7 +103,7 @@ export default function DefenseGame() {
   const cost = selectedState.level < maxLevel ? GAME_BALANCE.organUpgradeCosts[selectedState.level - 1] : 0;
   const time = `${String(Math.floor(hud.elapsed / 60)).padStart(2, "0")}:${String(Math.floor(hud.elapsed % 60)).padStart(2, "0")}`;
 
-  const restart = () => { setHud(initialHud); setPaused(false); setRun((n) => n + 1); };
+  const restart = () => { sendGameLabEvent("game_restarted", { runNumber: run + 2 }); setHud(initialHud); setPaused(false); setRun((n) => n + 1); };
   const pause = () => { engineRef.current?.togglePause(); setPaused((p) => !p); };
   const select = useCallback((id: OrganType) => engineRef.current?.selectOrgan(id), []);
   const cast = useCallback((id: OrganType) => engineRef.current?.castAbility(id), []);
@@ -119,6 +131,7 @@ export default function DefenseGame() {
 
   return (
     <main className="game-shell">
+      <div className="rotate-notice"><b>가로 화면으로 돌려주세요</b><span>장기전은 넓은 전장에서 플레이합니다.</span></div>
       <header className="game-header">
         <div><Link href="/" className="back-link">← 처음으로</Link><h1>장기<span>전</span></h1></div>
         <p>오늘 하루 생존 프로토콜</p>

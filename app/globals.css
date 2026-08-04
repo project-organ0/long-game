@@ -154,6 +154,7 @@ button { color:inherit }
 
 /* One-screen defense layout */
 body:has(.game-shell){overflow:hidden}
+.rotate-notice{display:none}
 .game-shell{height:100dvh;min-height:0;padding:7px 12px;display:flex;flex-direction:column;overflow:hidden}
 .game-header{width:100%;min-height:42px;height:42px;flex:0 0 42px}
 .game-header h1{font-size:24px}.game-header p{margin:0}
@@ -209,4 +210,15 @@ body:has(.game-shell){overflow:hidden}
 @media(max-width:520px){
   .control-bar{flex-direction:column}.ab-meta b{font-size:11px}.ab-icon{font-size:18px}
   .target-toggle{min-width:0;flex-direction:row;justify-content:space-between}
+}
+@media(max-width:520px) and (orientation:portrait){
+  .rotate-notice{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:30px;background:var(--paper);color:var(--ink);text-align:center}
+  .rotate-notice:before{content:"↻";font-size:64px;color:var(--coral);animation:bob 1.4s ease-in-out infinite}
+  .rotate-notice b{font-size:24px}.rotate-notice span{color:#66706d;font-size:13px}
+}
+@media(max-height:520px) and (orientation:landscape){
+  .game-shell{padding:5px 8px}.game-header{height:36px;min-height:36px;flex-basis:36px}.game-header p,.back-link{display:none}
+  .hud{margin:4px auto;min-height:40px;flex-basis:40px}.hud>div{padding:4px 7px}.hud strong{font-size:14px}
+  .game-grid{grid-template-columns:1fr}.organ-panel{display:none}.organ-tabs{display:grid}.arena-wrap{height:100%}
+  .control-bar{height:52px;flex-basis:52px}.start-now{bottom:64px}
 }
